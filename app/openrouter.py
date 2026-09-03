@@ -131,13 +131,8 @@ async def stream_chat(messages: list, model: str, web_search: bool = False,
                             yield ("annotations", annotations)
                     # 사용량/비용: 보통 마지막 또는 그 직전 청크에 한 번 옴
                     usage = chunk.get("usage")
-                    if usage and (
-                        usage.get("cost") is not None
-                        or usage.get("prompt_tokens") is not None
-                        or usage.get("completion_tokens") is not None
-                        or usage.get("total_tokens") is not None
-                    ):
-                        yield ("usage", usage)
+                    if usage and usage.get("cost") is not None:
+                        yield ("usage", {"cost": usage["cost"]})
         yield ("done", None)
     except httpx.HTTPError as e:
         yield ("error", f"네트워크 오류: {e}")

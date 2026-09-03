@@ -54,12 +54,6 @@
   .conv-item .pin.on { width: 18px; padding: 0 2px; }
   .conv-item .pin.on { color: var(--accent); }
   .conv-item .pin:hover { color: var(--accent); }
-  /* 비용 칩: 항상 표시되는 작은 pill */
-  .conv-item .cost-chip { flex: 0 0 auto; font-size: 11px; color: var(--fg-dim);
-                          background: var(--bg3); border: 1px solid var(--border);
-                          border-radius: 10px; padding: 1px 7px; margin-left: 6px;
-                          white-space: nowrap; }
-  .conv-item .cost-chip.zero { opacity: 0.5; }
   .btn.danger { background: var(--danger); }
   .btn.danger:hover { background: #c04848; }
   #sidebar .side-footer { padding: 10px; border-top: 1px solid var(--border); }
@@ -132,24 +126,6 @@
   .model-label { font-size: 11px; color: var(--fg-dim); align-self: center;
                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
                  max-width: 220px; margin-right: auto; }
-  /* 회당 사용량(비용/토큰) 라벨 */
-  .usage-label { font-size: 11px; color: var(--fg-dim); align-self: center;
-                 margin-right: 6px; white-space: nowrap; }
-  /* 상단 바의 OpenRouter 잔액 칩 */
-  #credits-chip { display: inline-flex; align-items: center; gap: 6px;
-                  font-size: 12px; color: var(--fg);
-                  background: var(--bg3); border: 1px solid var(--border);
-                  border-radius: 14px; padding: 3px 10px; white-space: nowrap; }
-  #credits-chip[hidden] { display: none !important; }
-  #credits-chip .credits-text { font-variant-numeric: tabular-nums; }
-  #credits-chip .credits-text.dim { color: var(--fg-dim); }
-  #credits-chip .credits-text.warn { color: #e0a050; }
-  #credits-chip .credits-text.danger { color: var(--danger); }
-  #credits-chip .credits-sep { color: var(--fg-dim); margin: 0 2px; }
-  #credits-refresh { background: none; border: none; color: var(--fg-dim);
-                     font-size: 13px; padding: 0; line-height: 1; cursor: pointer; }
-  #credits-refresh:hover { color: var(--fg); }
-  #credits-refresh:disabled { opacity: 0.5; cursor: default; }
   .variant-nav { display: flex; align-items: center; justify-content: center; gap: 10px;
               font-size: 12px; color: var(--fg-dim); margin-top: 2px; }
   .var-btn { background: none; border: none; color: var(--accent); font-size: 15px;
@@ -249,10 +225,6 @@
       <select id="model-select" data-i18n-title="model_select"></select>
       <button class="icon-btn" id="manage-models-btn" data-i18n-title="manage_models">⚙</button>
       <span id="preset-badge" style="display:none"></span>
-      <span id="credits-chip" data-i18n-title="credits_remaining" hidden>
-        <span class="credits-text" id="credits-text">…</span>
-        <button id="credits-refresh" data-i18n-title="credits_refresh" type="button">↻</button>
-      </span>
       <select id="lang-select" style="margin-left:auto">
         <option value="ko">한국어</option>
         <option value="fr">Français</option>
@@ -427,17 +399,6 @@ const I18N = {
     img_alt: "이미지",
     thinking: "생각 중…",
     think_done: "사고 과정",
-    credits_remaining: "OpenRouter 잔액",
-    credits_limit: "한도",
-    credits_used: "누적 사용",
-    credits_used_today: "오늘 사용",
-    credits_free_tier: "Free tier",
-    credits_unlimited: "무제한",
-    credits_load_fail: "잔액을 불러올 수 없습니다",
-    credits_refresh: "잔액 새로고침",
-    cost_chip_title: "이 대화에 사용한 크레딧 (회당 합산)",
-    usage_no_data: "사용량 정보 없음",
-    usage_tokens_fmt: "{p}→{c} tok",
   },
   fr: {
     app_title: "Chat local OpenRouter",
@@ -507,17 +468,6 @@ const I18N = {
     img_alt: "Image",
     thinking: "Réflexion en cours…",
     think_done: "Processus de réflexion",
-    credits_remaining: "Solde OpenRouter",
-    credits_limit: "Plafond",
-    credits_used: "Utilisé (total)",
-    credits_used_today: "Utilisé aujourd'hui",
-    credits_free_tier: "Forfait gratuit",
-    credits_unlimited: "Illimité",
-    credits_load_fail: "Impossible de charger le solde",
-    credits_refresh: "Actualiser le solde",
-    cost_chip_title: "Crédits utilisés dans cette conversation (somme par tour)",
-    usage_no_data: "Aucune information d'utilisation",
-    usage_tokens_fmt: "{p}→{c} tok",
   },
 };
 
@@ -726,29 +676,6 @@ function renderMarkdown(text) {
 }
 
 // ---------- 렌더링 ----------
-function formatCost(usd) {
-  if (typeof usd !== "number" || !isFinite(usd)) return null;
-  if (usd === 0) return "$0.0000";
-  if (Math.abs(usd) < 0.00005) return "<$0.0001";
-  if (Math.abs(usd) >= 1000) return `$${usd.toFixed(2)}`;
-  return `$${usd.toFixed(4)}`;
-}
-
-function usageLabelText(u) {
-  if (!u) return "";
-  const costStr = formatCost(u.cost);
-  const p = u.prompt_tokens;
-  const c = u.completion_tokens;
-  let parts = [];
-  if (typeof p === "number" && typeof c === "number") {
-    parts.push(t("usage_tokens_fmt", { p, c }));
-  } else if (u.total_tokens != null) {
-    parts.push(`${u.total_tokens} tok`);
-  }
-  if (costStr) parts.push(costStr);
-  return parts.join(" · ");
-}
-
 function renderConvList() {
   convListEl.innerHTML = "";
   for (const c of conversations) {
@@ -758,18 +685,6 @@ function renderConvList() {
     title.className = "title";
     title.textContent = (c.pinned ? "📌 " : "") + c.title;
     title.ondblclick = () => renameConversation(c);
-    const cost = document.createElement("span");
-    cost.className = "cost-chip";
-    const u = c.usage_total;
-    if (u && (u.cost > 0 || u.prompt_tokens > 0 || u.completion_tokens > 0)) {
-      const cs = formatCost(u.cost);
-      cost.textContent = cs || "0";
-      cost.title = t("cost_chip_title");
-    } else {
-      cost.classList.add("zero");
-      cost.textContent = "$0.00";
-      cost.title = t("cost_chip_title");
-    }
     const pin = document.createElement("button");
     pin.className = "pin" + (c.pinned ? " on" : "");
     pin.textContent = "📌";
@@ -780,7 +695,7 @@ function renderConvList() {
     del.textContent = "✕";
     del.title = t("del");
     del.onclick = (e) => { e.stopPropagation(); deleteConversation(c.id); };
-    div.append(title, cost, pin, del);
+    div.append(title, pin, del);
     div.onclick = () => selectConversation(c.id);
     convListEl.appendChild(div);
   }
@@ -861,21 +776,8 @@ function appendMessageEl(m, isLastAssistant = false) {
     html = '<details class="think-block"><summary>' + t("think_done") + '</summary><div class="think-body">' + escapeHtml(m.reasoning) + '</div></details>' + html;
   }
   // 액션 버튼 (hover 시 노출)
-  let usageLabel = "";
-  if (m.role === "assistant" && m.usage) {
-    const txt = usageLabelText(m.usage);
-    if (txt) {
-      const fullTitle = [
-        typeof m.usage.cost === "number" ? `cost: $${m.usage.cost}` : null,
-        typeof m.usage.prompt_tokens === "number" ? `prompt: ${m.usage.prompt_tokens}` : null,
-        typeof m.usage.completion_tokens === "number" ? `completion: ${m.usage.completion_tokens}` : null,
-      ].filter(Boolean).join(" · ");
-      usageLabel = `<span class="usage-label" title="${escapeHtml(fullTitle || txt)}">${escapeHtml(txt)}</span>`;
-    }
-  }
   html += `<div class="msg-actions">`
        +    (m.role === "assistant" && m.model ? `<span class="model-label" title="${t("answered_by")}">${escapeHtml(m.model)}</span>` : "")
-       +    usageLabel
        +    `<button class="act copy-act" title="${t("copy_tip")}">${t("copy")}</button>`
        +    (m.role === "assistant" && isLastAssistant
              ? `<button class="act regen-act" title="${t("regen_tip")}">${t("regen")}</button>` : "")
@@ -1054,7 +956,6 @@ async function sendMessage(regenerate = false) {
   let fullText = "";
   let fullReasoning = "";
   let thinkEl = null;
-  let lastUsage = null;
   const finalizeThink = () => {
     if (thinkEl) {
       thinkEl.classList.remove("streaming");
@@ -1129,8 +1030,6 @@ async function sendMessage(regenerate = false) {
             `<div class="msg-image"><img src="${escapeHtml(payload)}" alt="${t("img_alt")}">`
             + `<a class="dl-img" href="${escapeHtml(payload)}" download>${t("save_img")}</a></div>`);
           scrollToBottom();
-        } else if (event === "usage") {
-          lastUsage = payload;
         } else if (event === "error") {
           throw new Error(payload);
         } else if (event === "done") {
@@ -1147,8 +1046,6 @@ async function sendMessage(regenerate = false) {
     renderMessages();
     inputEl.focus();
     scrollToBottom();
-    // 사용한 크레딧이 있을 수 있으므로 잔액 즉시 갱신
-    refreshCreditsAfterTurn();
   } catch (e) {
     assistantEl.classList.remove("streaming");
     assistantEl.innerHTML = `<span style="color:var(--danger)">${t("error_prefix")}${escapeHtml(e.message)}</span>`;
@@ -1502,93 +1399,6 @@ inputEl.addEventListener("paste", async (e) => {
   });
 });
 
-// ---------- 잔액(크레딧) ----------
-let creditsTimer = null;
-let lastCredits = null;
-
-function formatUsd(n) {
-  if (typeof n !== "number" || !isFinite(n)) return null;
-  if (n === 0) return "$0.0000";
-  if (Math.abs(n) >= 1000) return `$${n.toFixed(2)}`;
-  return `$${n.toFixed(4)}`;
-}
-
-function renderCredits(info) {
-  const chip = $("credits-chip");
-  const txt = $("credits-text");
-  if (!chip || !txt) return;
-  if (!info) {
-    chip.hidden = true;
-    return;
-  }
-  chip.hidden = false;
-  txt.classList.remove("dim", "warn", "danger");
-  const isFree = info.is_free_tier === true;
-  const rem = info.limit_remaining;
-  const lim = info.limit;
-  const daily = info.usage_daily;
-
-  // Free tier: 배지만
-  if (isFree && (rem == null || rem <= 0) && (info.usage ?? 0) === 0) {
-    txt.classList.add("dim");
-    txt.textContent = t("credits_free_tier");
-    chip.title = t("credits_remaining");
-    return;
-  }
-
-  const parts = [];
-  if (rem != null) {
-    const remStr = formatUsd(rem);
-    if (remStr) parts.push(`${t("credits_remaining")} ${remStr}`);
-  }
-  if (lim != null) {
-    const limStr = formatUsd(lim);
-    if (limStr) parts.push(`${t("credits_limit")} ${limStr}`);
-  } else if (rem == null) {
-    parts.push(t("credits_unlimited"));
-  }
-  if (typeof daily === "number" && daily > 0) {
-    const dStr = formatUsd(daily);
-    if (dStr) parts.push(`${t("credits_used_today")} ${dStr}`);
-  }
-  txt.textContent = parts.join(" · ");
-  // 색상: 잔액 적으면 경고
-  if (typeof rem === "number" && rem < 1) txt.classList.add("danger");
-  else if (typeof rem === "number" && rem < 5) txt.classList.add("warn");
-  // hover 시 상세 정보
-  const detailParts = [];
-  if (typeof info.usage === "number") detailParts.push(`${t("credits_used")} ${formatUsd(info.usage) ?? info.usage}`);
-  if (typeof info.usage_weekly === "number") detailParts.push(`week: ${formatUsd(info.usage_weekly) ?? info.usage_weekly}`);
-  if (typeof info.usage_monthly === "number") detailParts.push(`month: ${formatUsd(info.usage_monthly) ?? info.usage_monthly}`);
-  if (info.label) detailParts.push(`key: ${info.label}`);
-  chip.title = detailParts.length ? detailParts.join("\n") : t("credits_remaining");
-}
-
-async function loadCredits({ force = false } = {}) {
-  const btn = $("credits-refresh");
-  if (btn) btn.disabled = true;
-  try {
-    const url = force ? "/api/credits/refresh" : "/api/credits";
-    const method = force ? "POST" : "GET";
-    const info = await api(url, { method });
-    lastCredits = info;
-    renderCredits(info);
-  } catch (e) {
-    // API 키 미설정/네트워크 오류 등은 칩을 숨김
-    const chip = $("credits-chip");
-    if (chip) chip.hidden = true;
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-}
-
-// 대화 응답 직후 즉시 잔액을 갱신 (서버 캐시 무효화)
-async function refreshCreditsAfterTurn() {
-  try {
-    await loadCredits({ force: true });
-  } catch { /* 무시 */ }
-}
-
 // ---------- 초기화 ----------
 (async function init() {
   applyLang();
@@ -1603,15 +1413,6 @@ async function refreshCreditsAfterTurn() {
   } catch (e) {
     messagesEl.innerHTML = `<div id="empty-hint">${t("init_error", { msg: escapeHtml(e.message) })}</div>`;
   }
-  // 잔액은 비동기로 (실패해도 UI에 영향 없음)
-  loadCredits().finally(() => {
-    // 5분마다 자동 갱신
-    if (creditsTimer) clearInterval(creditsTimer);
-    creditsTimer = setInterval(() => loadCredits({ force: true }), 5 * 60 * 1000);
-  });
-  // 수동 새로고침 버튼
-  const refreshBtn = $("credits-refresh");
-  if (refreshBtn) refreshBtn.onclick = () => loadCredits({ force: true });
 })();
 </script>
 </body>

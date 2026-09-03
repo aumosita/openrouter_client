@@ -82,7 +82,10 @@ class ModelAdd(BaseModel):
 
 @app.get("/")
 def index():
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(
+        STATIC_DIR / "index.html",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 # ---------- 업로드 / 정적 서빙 ----------

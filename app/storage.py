@@ -198,8 +198,6 @@ def _row_to_conversation(row: sqlite3.Row, messages: list) -> dict:
     }
     # 회당 usage 합산 (사이드바 비용 칩 / 메시지 액션 줄 표시용)
     cost = 0.0
-    prompt_tokens = 0
-    completion_tokens = 0
     has_usage = False
     for m in messages:
         u = m.get("usage")
@@ -208,16 +206,8 @@ def _row_to_conversation(row: sqlite3.Row, messages: list) -> dict:
         has_usage = True
         if isinstance(u.get("cost"), (int, float)):
             cost += float(u["cost"])
-        if isinstance(u.get("prompt_tokens"), int):
-            prompt_tokens += u["prompt_tokens"]
-        if isinstance(u.get("completion_tokens"), int):
-            completion_tokens += u["completion_tokens"]
     if has_usage:
-        conv["usage_total"] = {
-            "cost": cost,
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-        }
+        conv["usage_total"] = {"cost": cost}
     return conv
 
 
@@ -278,7 +268,9 @@ def _get_messages(conn: sqlite3.Connection, conv_id: str) -> list:
             msg["reasoning"] = r["reasoning"]
         if r["usage"]:
             try:
-                msg["usage"] = json.loads(r["usage"])
+                usage = json.loads(r["usage"])
+                if isinstance(usage, dict) and usage.get("cost") is not None:
+                    msg["usage"] = {"cost": usage["cost"]}
             except json.JSONDecodeError:
                 pass
         msgs.append(msg)
