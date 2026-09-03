@@ -1,0 +1,1408 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title data-i18n="app_title">OpenRouter 로컬 챗</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<style>
+  :root {
+    --bg: #1e1f24; --bg2: #26272e; --bg3: #2f3038; --border: #3a3b44;
+    --fg: #e6e6ea; --fg-dim: #9a9ba5; --accent: #6c8cff; --accent2: #5570d6;
+    --user-bg: #34558f; --danger: #e06565;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+         background: var(--bg); color: var(--fg); height: 100vh; display: flex; overflow: hidden; }
+  button { cursor: pointer; font-family: inherit; }
+  /* 사고 과정(추론) 블록 */
+  .think-block { margin: 0 0 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg2); font-size: 13px; max-width: 720px; }
+  .think-block summary { cursor: pointer; padding: 6px 10px; color: var(--fg-dim); user-select: none; list-style: none; }
+  .think-block summary::-webkit-details-marker { display: none; }
+  .think-block summary::before { content: "▸ "; }
+  .think-block[open] summary::before { content: "▾ "; }
+  .think-block .think-body { padding: 6px 10px 8px; white-space: pre-wrap; color: var(--fg-dim); max-height: 300px; overflow-y: auto; border-top: 1px solid var(--border); }
+  .think-block.streaming summary { color: var(--accent); }
+
+  /* 사이드바 */
+  #sidebar { width: 270px; min-width: 270px; background: var(--bg2); border-right: 1px solid var(--border);
+             display: flex; flex-direction: column; }
+  #sidebar .side-header { padding: 14px; border-bottom: 1px solid var(--border); }
+  #sidebar .side-header h1 { font-size: 15px; margin-bottom: 10px; }
+  .btn { background: var(--accent); color: #fff; border: none; border-radius: 6px;
+         padding: 8px 12px; font-size: 13px; width: 100%; }
+  .btn:hover { background: var(--accent2); }
+  .btn.secondary { background: var(--bg3); color: var(--fg); border: 1px solid var(--border); }
+  .btn.secondary:hover { background: var(--border); }
+  #conv-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .conv-item { padding: 9px 10px; border-radius: 6px; cursor: pointer; display: flex;
+               align-items: center; justify-content: space-between; gap: 6px; font-size: 13px; }
+  .conv-item:hover { background: var(--bg3); }
+  .conv-item.active { background: var(--bg3); outline: 1px solid var(--border); }
+  .conv-item .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conv-item .del { background: none; border: none; color: var(--fg-dim); font-size: 14px;
+                    visibility: hidden; padding: 0 2px; }
+  .conv-item:hover .del { visibility: visible; }
+  .conv-item .del:hover { color: var(--danger); }
+  .conv-item .pin { background: none; border: none; color: var(--fg-dim); font-size: 13px;
+                    visibility: hidden; padding: 0 2px; }
+  .conv-item:hover .pin { visibility: visible; }
+  .conv-item .pin.on { visibility: visible; color: var(--accent); }
+  .conv-item .pin:hover { color: var(--accent); }
+  .btn.danger { background: var(--danger); }
+  .btn.danger:hover { background: #c04848; }
+  #sidebar .side-footer { padding: 10px; border-top: 1px solid var(--border); }
+
+  /* 메인 */
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #topbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+            border-bottom: 1px solid var(--border); background: var(--bg2); flex-wrap: wrap; }
+  #topbar select { background: var(--bg3); color: var(--fg); border: 1px solid var(--border);
+                   border-radius: 6px; padding: 6px 8px; font-size: 13px; max-width: 300px; }
+  .toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--fg-dim);
+            cursor: pointer; user-select: none; }
+  .toggle .pill { width: 34px; height: 18px; border-radius: 9px; background: var(--bg3);
+                  border: 1px solid var(--border); position: relative; transition: background .15s; }
+  .toggle .pill::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px;
+                         border-radius: 50%; background: var(--fg-dim); transition: all .15s; }
+  .toggle.on .pill { background: var(--accent); }
+  .toggle.on .pill::after { left: 18px; background: #fff; }
+  #preset-badge { font-size: 12px; background: var(--bg3); border: 1px solid var(--border);
+                  color: var(--fg-dim); border-radius: 12px; padding: 4px 10px; }
+  .icon-btn { background: var(--bg3); color: var(--fg); border: 1px solid var(--border);
+              border-radius: 6px; padding: 5px 9px; font-size: 14px; }
+  .icon-btn:hover { background: var(--border); }
+  #model-search-results, #favorite-model-list { max-height: 240px; overflow-y: auto;
+              border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; }
+  #model-search-results:empty { display: none; }
+  #favorite-model-list:empty { display: none; }
+  .model-item { padding: 8px 10px; display: flex; align-items: center;
+                justify-content: space-between; gap: 8px; font-size: 13px;
+                border-bottom: 1px solid var(--border); }
+  .model-item:last-child { border-bottom: none; }
+  .model-item:hover { background: var(--bg3); }
+  .model-item .info { min-width: 0; }
+  .model-item .info .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .model-item .info .desc { color: var(--fg-dim); font-size: 12px; margin-top: 2px;
+                            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .model-item .add-btn, .model-item .del { background: none; border: 1px solid var(--border);
+                color: var(--fg-dim); border-radius: 4px; padding: 3px 8px; font-size: 12px;
+                white-space: nowrap; }
+  .model-item .add-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .model-item .del:hover { color: var(--danger); border-color: var(--danger); }
+  .model-badge { background: var(--accent); color: #fff; border-radius: 4px;
+                 font-size: 11px; padding: 1px 6px; margin-left: 6px; }
+
+  #messages { flex: 1; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 14px; }
+  .msg { max-width: 78%; padding: 10px 14px; border-radius: 10px; font-size: 14px;
+         line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+  .msg.user { align-self: flex-end; background: var(--user-bg); }
+  .msg.assistant { align-self: flex-start; background: var(--bg3); }
+  .msg.assistant.streaming::after { content: "▍"; animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .msg pre { background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+             padding: 10px; overflow-x: auto; margin: 8px 0; white-space: pre; }
+  .msg code { font-family: "Consolas", "Monaco", monospace; font-size: 13px; }
+  .code-block { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin: 8px 0; }
+  .code-block .code-head { display: flex; align-items: center; justify-content: space-between;
+              background: var(--bg3); padding: 4px 10px; }
+  .code-block .code-lang { font-size: 11px; color: var(--fg-dim);
+              font-family: "Consolas", "Monaco", monospace; }
+  .code-block pre { margin: 0; border: none; border-radius: 0; }
+  .code-block.wrapped pre { white-space: pre-wrap; word-break: break-word; }
+  .code-head-btns { display: flex; gap: 6px; }
+  .wrap-toggle.on { color: var(--accent); border-color: var(--accent); }
+  .msg-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 4px;
+              opacity: 0; transition: opacity .15s; height: 18px; }
+  .msg:hover .msg-actions, .msg:focus-within .msg-actions { opacity: 1; }
+  .msg .act { background: none; border: 1px solid transparent; color: var(--fg-dim);
+              font-size: 11px; padding: 1px 7px; border-radius: 4px; cursor: pointer; }
+  .msg .act:hover { color: var(--fg); border-color: var(--border); background: var(--bg3); }
+  .model-label { font-size: 11px; color: var(--fg-dim); align-self: center;
+                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                 max-width: 220px; margin-right: auto; }
+  .variant-nav { display: flex; align-items: center; justify-content: center; gap: 10px;
+              font-size: 12px; color: var(--fg-dim); margin-top: 2px; }
+  .var-btn { background: none; border: none; color: var(--accent); font-size: 15px;
+              line-height: 1; padding: 0 4px; }
+  .var-btn:hover:not(:disabled) { color: var(--fg); }
+  .var-btn:disabled { color: var(--border); cursor: default; }
+  /* 이미지 입출력 */
+  .msg-image { position: relative; display: inline-block; margin: 6px 0; }
+  .msg-image img { max-width: min(320px, 100%); border-radius: 8px; display: block;
+                   border: 1px solid var(--border); cursor: zoom-in; }
+  .msg-image:hover .dl-img { opacity: 1; }
+  .dl-img { position: absolute; top: 6px; right: 6px; background: rgba(30,31,36,.85);
+            color: #fff; border: 1px solid var(--border); border-radius: 5px;
+            padding: 3px 9px; font-size: 12px; cursor: pointer; opacity: 0;
+            transition: opacity .15s; text-decoration: none; }
+  .dl-img:hover { background: var(--accent); }
+  #attach-preview { display: flex; gap: 8px; flex-wrap: wrap; }
+  #attach-preview:not(:empty) { margin-bottom: 4px; }
+  #attach-preview .thumb { position: relative; width: 56px; height: 56px;
+              border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  #attach-preview .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  #attach-preview .thumb .rm { position: absolute; top: 0; right: 0; width: 16px; height: 16px;
+              background: rgba(30,31,36,.85); color: var(--danger); border: none;
+              font-size: 10px; line-height: 16px; text-align: center; padding: 0; }
+  .msg p { margin: 6px 0; }
+  .msg h1, .msg h2, .msg h3, .msg h4 { margin: 10px 0 4px; line-height: 1.3; }
+  .msg h1 { font-size: 20px; } .msg h2 { font-size: 17px; }
+  .msg h3 { font-size: 15px; } .msg h4 { font-size: 14px; }
+  .msg hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+  .msg table { border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+  .msg blockquote { margin: 8px 0; padding: 6px 12px; border-left: 3px solid var(--accent);
+                    background: var(--bg3); border-radius: 4px; color: var(--fg-dim); }
+  .msg th, .msg td { border: 1px solid var(--border); padding: 5px 10px; text-align: left; }
+  .msg th { background: var(--bg); }
+  .msg ul, .msg ol { margin: 6px 0 6px 22px; }
+  .msg a { color: var(--accent); }
+  .msg .katex-display { margin: 10px 0; overflow-x: auto; overflow-y: hidden; font-size: 1.35em; line-height: 1.4; }
+  .msg .katex { font-size: 1.35em; }
+  #empty-hint { margin: auto; color: var(--fg-dim); font-size: 14px; text-align: center; }
+
+  #input-area { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--bg2);
+                display: flex; flex-direction: column; gap: 8px; }
+  #input-row { display: flex; gap: 8px; align-items: flex-end; width: 100%; }
+  #input { flex: 1; background: var(--bg3); color: var(--fg); border: 1px solid var(--border);
+           border-radius: 8px; padding: 10px 12px; font-size: 14px; font-family: inherit;
+           resize: none; max-height: 160px; }
+  #input:focus { outline: none; border-color: var(--accent); }
+  #send-btn { width: auto; padding: 10px 18px; }
+  #send-btn:disabled { background: var(--bg3); color: var(--fg-dim); cursor: not-allowed; }
+
+
+  /* 모달 */
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none;
+                    align-items: center; justify-content: center; z-index: 10; }
+  .modal-backdrop.open { display: flex; }
+  .modal { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+           width: 560px; max-width: 92vw; max-height: 85vh; overflow-y: auto; padding: 18px; }
+  .modal h2 { font-size: 16px; margin-bottom: 14px; }
+  .modal .row { margin-bottom: 10px; }
+  .modal label { display: block; font-size: 12px; color: var(--fg-dim); margin-bottom: 4px; }
+  .modal input[type=text], .modal textarea, .modal select {
+    width: 100%; background: var(--bg3); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: inherit; }
+  .modal textarea { resize: vertical; min-height: 110px; }
+  .preset-item { display: flex; align-items: center; gap: 8px; padding: 10px;
+                 border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; }
+  .preset-item .info { flex: 1; min-width: 0; }
+  .preset-item .name { font-size: 14px; }
+  .preset-item .desc { font-size: 12px; color: var(--fg-dim); overflow: hidden;
+                       text-overflow: ellipsis; white-space: nowrap; }
+  .icon-btn { background: var(--bg3); border: 1px solid var(--border); color: var(--fg);
+              border-radius: 6px; padding: 5px 9px; font-size: 12px; }
+  .icon-btn:hover { background: var(--border); }
+  .icon-btn.danger:hover { background: var(--danger); border-color: var(--danger); }
+  .modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+  .modal .actions .btn { width: auto; }
+  #new-chat-preset { margin-top: 8px; width: 100%; background: var(--bg3); color: var(--fg);
+                     border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-size: 13px; }
+</style>
+</head>
+<body>
+  <aside id="sidebar">
+    <div class="side-header">
+      <h1 data-i18n="app_title">OpenRouter 로컬 챗</h1>
+      <button class="btn" id="new-chat-btn" data-i18n="new_chat">+ 새 대화</button>
+      <select id="new-chat-preset" data-i18n-title="preset_for_new"></select>
+    </div>
+    <div id="conv-list"></div>
+    <div class="side-footer">
+      <button class="btn secondary" id="manage-presets-btn" data-i18n="manage_presets">프리셋 관리</button>
+      <button class="btn danger" id="delete-all-btn" style="margin-top:8px" data-i18n="delete_all">대화 전체 삭제</button>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div id="topbar">
+      <select id="model-select" data-i18n-title="model_select"></select>
+      <button class="icon-btn" id="manage-models-btn" data-i18n-title="manage_models">⚙</button>
+      <span id="preset-badge" style="display:none"></span>
+      <select id="lang-select" style="margin-left:auto">
+        <option value="ko">한국어</option>
+        <option value="fr">Français</option>
+      </select>
+    </div>
+    <div id="messages"><div id="empty-hint" data-i18n-html="empty_hint">왼쪽에서 대화를 선택하거나<br>새 대화를 시작하세요.</div></div>
+    <div id="input-area">
+      <div class="toggle on" id="web-toggle" data-i18n-title="web_search_tip">
+        <div class="pill"></div><span data-i18n="web_search">웹 검색</span>
+      </div>
+      <div id="input-row">
+        <button class="icon-btn" id="attach-btn" data-i18n-title="attach_image" style="display:none">📎</button>
+        <textarea id="input" rows="1" data-i18n-ph="input_ph" placeholder="메시지를 입력하세요 (Enter: 전송, Shift+Enter: 줄바꿈)"></textarea>
+        <button class="btn" id="send-btn" data-i18n="send">전송</button>
+        <input type="file" id="file-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none">
+      </div>
+      <div id="attach-preview"></div>
+    </div>
+  </main>
+
+  <!-- 전체 삭제 확인 모달 -->
+  <div class="modal-backdrop" id="bulk-delete-modal">
+    <div class="modal">
+      <h2 data-i18n="bd_title">대화 전체 삭제</h2>
+      <p id="bd-summary" style="font-size:13px;color:var(--fg-dim);margin-bottom:10px"></p>
+      <label class="toggle" id="bd-include-pinned" style="color:var(--fg)">
+        <input type="checkbox" id="bd-delete-pinned" style="display:none">
+        <div class="pill"></div><span data-i18n="bd_include_pinned">고정(보존)된 대화도 삭제</span>
+      </label>
+      <p id="bd-warning" style="display:none;font-size:12px;color:var(--danger);margin-top:6px" data-i18n="bd_warning">⚠ 고정된 대화까지 모두 삭제되며 되돌릴 수 없습니다.</p>
+      <p style="font-size:12px;color:var(--fg-dim);margin-top:6px" data-i18n="bd_irreversible">이 작업은 되돌릴 수 없습니다.</p>
+      <div class="actions">
+        <button class="btn secondary" id="bd-cancel-btn" data-i18n="cancel">취소</button>
+        <button class="btn danger" id="bd-confirm-btn" data-i18n="delete">삭제</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 프리셋 관리 모달 -->
+  <div class="modal-backdrop" id="preset-modal">
+    <div class="modal">
+      <h2 data-i18n="presets_title">프리셋 관리</h2>
+      <div id="preset-list"></div>
+      <div class="actions">
+        <button class="btn secondary" id="preset-close-btn" data-i18n="close">닫기</button>
+        <button class="btn" id="preset-add-btn" data-i18n="add_preset">+ 새 프리셋</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 모델 관리 모달 -->
+  <div class="modal-backdrop" id="model-modal">
+    <div class="modal">
+      <h2 data-i18n="models_title">모델 관리</h2>
+      <div class="row"><label data-i18n="models_search">OpenRouter 모델 검색</label>
+        <input type="text" id="mm-search" data-i18n-ph="models_search_ph" placeholder="예: claude, gpt, free ..."></div>
+      <div id="model-search-results"></div>
+      <div class="row"><label data-i18n="favorites">즐겨찾기</label></div>
+      <div id="favorite-model-list"></div>
+      <div class="actions">
+        <button class="btn secondary" id="model-close-btn" data-i18n="close">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 프리셋 편집 모달 -->
+  <div class="modal-backdrop" id="preset-edit-modal">
+    <div class="modal">
+      <h2 id="preset-edit-title" data-i18n="pe_edit">프리셋 편집</h2>
+      <div class="row"><label data-i18n="name">이름</label><input type="text" id="pe-name"></div>
+      <div class="row"><label data-i18n="desc_opt">설명 (선택)</label><input type="text" id="pe-desc"></div>
+      <div class="row"><label data-i18n="sys_prompt">시스템 프롬프트</label><textarea id="pe-prompt"></textarea></div>
+      <div class="row"><label data-i18n="default_model">기본 모델 (선택 — 비우면 대화의 모델 사용)</label>
+        <input type="text" id="pe-model" placeholder="예: openai/gpt-4o-mini"></div>
+      <div class="actions">
+        <button class="btn secondary" id="pe-cancel-btn" data-i18n="cancel">취소</button>
+        <button class="btn" id="pe-save-btn" data-i18n="save">저장</button>
+      </div>
+    </div>
+  </div>
+
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script>
+"use strict";
+
+// ---------- 상태 ----------
+let favoriteModels = []; // 서버(data/models.json)에서 로드
+let conversations = [];
+let presets = [];
+let currentConvId = null;
+let webSearchOn = true; // 기본 켜짐
+let sending = false;
+let editingPresetId = null; // null이면 새 프리셋
+let modelCaps = {};        // 모델 ID별 이미지 입출력 지원 여부
+let pendingImages = [];    // 첨부 대기 중인 이미지 [{dataUri, name}]
+
+// ---------- DOM ----------
+const $ = (id) => document.getElementById(id);
+const convListEl = $("conv-list"), messagesEl = $("messages"), inputEl = $("input");
+const sendBtn = $("send-btn"), modelSelect = $("model-select");
+const webToggle = $("web-toggle"), presetBadge = $("preset-badge");
+
+// ---------- 다국어 (i18n) ----------
+let currentLang = localStorage.getItem("lang") || "ko";
+
+const I18N = {
+  ko: {
+    app_title: "OpenRouter 로컬 챗",
+    new_chat: "+ 새 대화",
+    preset_for_new: "새 대화에 적용할 프리셋",
+    manage_presets: "프리셋 관리",
+    delete_all: "대화 전체 삭제",
+    model_select: "모델 선택",
+    manage_models: "모델 관리",
+    empty_hint: "왼쪽에서 대화를 선택하거나<br>새 대화를 시작하세요.",
+    web_search: "웹 검색",
+    web_search_tip: "OpenRouter 웹 검색 플러그인 (유료 크레딧 차감)",
+    attach_image: "이미지 첨부",
+    input_ph: "메시지를 입력하세요 (Enter: 전송, Shift+Enter: 줄바꿈)",
+    send: "전송",
+    bd_title: "대화 전체 삭제",
+    bd_include_pinned: "고정(보존)된 대화도 삭제",
+    bd_warning: "⚠ 고정된 대화까지 모두 삭제되며 되돌릴 수 없습니다.",
+    bd_irreversible: "이 작업은 되돌릴 수 없습니다.",
+    cancel: "취소",
+    delete: "삭제",
+    presets_title: "프리셋 관리",
+    close: "닫기",
+    add_preset: "+ 새 프리셋",
+    models_title: "모델 관리",
+    models_search: "OpenRouter 모델 검색",
+    models_search_ph: "예: claude, gpt, free ...",
+    favorites: "즐겨찾기",
+    pe_edit: "프리셋 편집",
+    pe_new: "새 프리셋",
+    name: "이름",
+    desc_opt: "설명 (선택)",
+    sys_prompt: "시스템 프롬프트",
+    default_model: "기본 모델 (선택 — 비우면 대화의 모델 사용)",
+    save: "저장",
+    pin_on: "고정 해제",
+    pin_off: "고정 (전체 삭제 시 보존)",
+    del: "삭제",
+    edit: "편집",
+    preset_prefix: "프리셋: ",
+    no_preset: "프리셋 없음",
+    copy: "복사",
+    copied: "복사됨",
+    regen: "재답변",
+    regen_tip: "다시 답변 생성",
+    copy_tip: "복사",
+    save_img: "⬇ 저장",
+    rename_prompt: "대화 제목",
+    confirm_del_conv: "이 대화를 삭제할까요?",
+    bd_summary: "{n}개의 일반 대화를 삭제합니다.",
+    bd_summary_keep: " 고정(보존)된 {n}개 대화는 유지됩니다.",
+    upload_fail: "이미지 업로드 실패: {msg}",
+    error_prefix: "오류: ",
+    confirm_del_preset: '프리셋 "{name}"을 삭제할까요?',
+    required_fields: "이름과 시스템 프롬프트는 필수입니다.",
+    added: "추가됨",
+    add_btn: "+ 추가",
+    ctx: "컨텍스트 {n}",
+    search_fail: "검색 실패: {msg}",
+    confirm_del_model: '모델 "{id}"을 즐겨찾기에서 삭제할까요?',
+    file_too_big: '"{name}"은 4MB를 초과합니다.',
+    init_error: "초기화 오류: {msg}",
+    request_fail: "요청 실패 ({status})",
+    answered_by: "이 답변을 생성한 모델",
+    wrap: "줄바꿈",
+    wrap_tip: "긴 줄 자동 줄바꿈 켜기/끄기",
+    img_alt: "이미지",
+    thinking: "생각 중…",
+    think_done: "사고 과정",
+  },
+  fr: {
+    app_title: "Chat local OpenRouter",
+    new_chat: "+ Nouvelle conversation",
+    preset_for_new: "Préréglage à appliquer aux nouvelles conversations",
+    manage_presets: "Gérer les préréglages",
+    delete_all: "Tout supprimer",
+    model_select: "Choisir un modèle",
+    manage_models: "Gérer les modèles",
+    empty_hint: "Sélectionnez une conversation à gauche ou<br>démarrez-en une nouvelle.",
+    web_search: "Recherche web",
+    web_search_tip: "Plugin de recherche web OpenRouter (crédits payants)",
+    attach_image: "Joindre une image",
+    input_ph: "Saisissez votre message (Entrée : envoyer, Maj+Entrée : nouvelle ligne)",
+    send: "Envoyer",
+    bd_title: "Supprimer toutes les conversations",
+    bd_include_pinned: "Supprimer aussi les conversations épinglées",
+    bd_warning: "⚠ Les conversations épinglées seront également supprimées. Action irréversible.",
+    bd_irreversible: "Cette action est irréversible.",
+    cancel: "Annuler",
+    delete: "Supprimer",
+    presets_title: "Gérer les préréglages",
+    close: "Fermer",
+    add_preset: "+ Nouveau préréglage",
+    models_title: "Gérer les modèles",
+    models_search: "Rechercher un modèle OpenRouter",
+    models_search_ph: "ex. : claude, gpt, free ...",
+    favorites: "Favoris",
+    pe_edit: "Modifier le préréglage",
+    pe_new: "Nouveau préréglage",
+    name: "Nom",
+    desc_opt: "Description (facultatif)",
+    sys_prompt: "Prompt système",
+    default_model: "Modèle par défaut (facultatif — sinon celui de la conversation)",
+    save: "Enregistrer",
+    pin_on: "Désépingler",
+    pin_off: "Épingler (protégé lors de la suppression globale)",
+    del: "Supprimer",
+    edit: "Modifier",
+    preset_prefix: "Préréglage : ",
+    no_preset: "Aucun préréglage",
+    copy: "Copier",
+    copied: "Copié !",
+    regen: "Régénérer",
+    regen_tip: "Générer à nouveau la réponse",
+    copy_tip: "Copier",
+    save_img: "⬇ Enregistrer",
+    answered_by: "Modèle ayant généré cette réponse",
+    wrap: "Retour à la ligne",
+    wrap_tip: "Activer/désactiver le retour à la ligne automatique",
+    rename_prompt: "Titre de la conversation",
+    confirm_del_conv: "Supprimer cette conversation ?",
+    bd_summary: "{n} conversations normales seront supprimées.",
+    bd_summary_keep: " {n} conversations épinglées seront conservées.",
+    upload_fail: "Échec de l'envoi de l'image : {msg}",
+    error_prefix: "Erreur : ",
+    confirm_del_preset: 'Supprimer le préréglage "{name}" ?',
+    required_fields: "Le nom et le prompt système sont obligatoires.",
+    added: "Ajouté",
+    add_btn: "+ Ajouter",
+    ctx: "Contexte {n}",
+    search_fail: "Échec de la recherche : {msg}",
+    confirm_del_model: 'Retirer le modèle "{id}" des favoris ?',
+    file_too_big: '"{name}" dépasse 4 Mo.',
+    init_error: "Erreur d'initialisation : {msg}",
+    request_fail: "Échec de la requête ({status})",
+    img_alt: "Image",
+    thinking: "Réflexion en cours…",
+    think_done: "Processus de réflexion",
+  },
+};
+
+function t(key, params) {
+  let s = (I18N[currentLang] && I18N[currentLang][key]) ?? I18N.ko[key] ?? key;
+  if (params) for (const [k, v] of Object.entries(params)) s = s.replaceAll(`{${k}}`, v);
+  return s;
+}
+
+function applyLang() {
+  document.documentElement.lang = currentLang;
+  for (const el of document.querySelectorAll("[data-i18n]")) el.textContent = t(el.dataset.i18n);
+  for (const el of document.querySelectorAll("[data-i18n-html]")) el.innerHTML = t(el.dataset.i18nHtml);
+  for (const el of document.querySelectorAll("[data-i18n-ph]")) el.placeholder = t(el.dataset.i18nPh);
+  for (const el of document.querySelectorAll("[data-i18n-title]")) el.title = t(el.dataset.i18nTitle);
+  // 동적 렌더링 부분 재적용
+  renderConvList();
+  renderPresetOptions();
+  renderMessages();
+}
+
+$("lang-select").value = currentLang;
+$("lang-select").onchange = (e) => {
+  currentLang = e.target.value;
+  localStorage.setItem("lang", currentLang);
+  applyLang();
+};
+// 실제 적용은 모든 DOM/함수 정의가 끝난 init()에서 수행
+const newChatPreset = $("new-chat-preset");
+
+// ---------- 유틸 ----------
+async function api(path, opts = {}) {
+  const resp = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...opts,
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.detail || t("request_fail", { status: resp.status }));
+  }
+  return resp.json();
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function unescapeHtml(s) {
+  return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+}
+
+// 모델 출력에 섞여 나오는 HTML 엔티티(&quot; 등)를 실제 문자로 정규화.
+// 이후 escapeHtml()이 다시 이스케이프하므로 XSS 위험은 없음.
+// &amp;를 마지막에 처리해 "&amp;quot;" 같은 중중 이스케이프도 한 번에 정리.
+function normalizeModelEntities(s) {
+  return s.replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&amp;/g, "&");
+}
+
+function normalizeMathTex(tex) {
+  let normalized = tex.trim();
+  normalized = normalized.replace(/(?<!\\)\|([^|\n]+)\|/g, "\\lvert $1 \\rvert");
+  normalized = normalized.replace(/\\left\|/g, "\\lvert");
+  normalized = normalized.replace(/\\right\|/g, "\\rvert");
+  return normalized;
+}
+
+// LaTeX 수식 → KaTeX HTML (실패 시 원문 그대로 표시)
+function renderMath(tex, display) {
+  if (typeof katex === "undefined") return escapeHtml(tex);
+  try {
+    const normalizedTex = normalizeMathTex(unescapeHtml(tex));
+    return katex.renderToString(normalizedTex, { displayMode: display, throwOnError: false });
+  } catch (e) {
+    return escapeHtml(tex);
+  }
+}
+
+// 마크다운: 코드블록, 제목, 가로줄, 표, 목록, 인라인(굵게/기울임/취소선/코드/링크)
+function inlineMd(t) {
+  return t
+    .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/__([^_]+)__/g, "<strong>$1</strong>")
+    .replace(/\*([^*\n]+)\*/g, "<em>$1</em>")
+    .replace(/~~([^~]+)~~/g, "<del>$1</del>")
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+}
+
+function splitTableRow(line) {
+  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+}
+
+function renderMarkdown(text) {
+  let s = escapeHtml(normalizeModelEntities(text));
+
+  // 코드블록은 플레이스홀더로 보호
+  const codeBlocks = [];
+  s = s.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    codeBlocks.push({ lang, code: code.replace(/\n$/, "") });
+    return `%%CB${codeBlocks.length - 1}%%`;
+  });
+
+  // 수식도 플레이스홀더로 보호 (마크다운 문법이 수식 내용을 망가뜨리지 않도록)
+  // 지원: $$...$$, \[...\] (블록), $...$, \(...\) (인라인)
+  const mathSegs = [];
+  s = s.replace(
+    /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$([^\n$]+?)\$/g,
+    (m, dd, bracket, paren, inline) => {
+      const display = dd !== undefined || bracket !== undefined;
+      const tex = dd ?? bracket ?? paren ?? inline;
+      mathSegs.push(renderMath(tex, display));
+      return `%%MATH${mathSegs.length - 1}%%`;
+    }
+  );
+
+  const lines = s.split("\n");
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // 표 (헤더 행 + 구분 행)
+    if (line.trim().startsWith("|") && i + 1 < lines.length &&
+        /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(lines[i + 1]) && lines[i + 1].includes("|")) {
+      const header = splitTableRow(line);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].trim().startsWith("|")) {
+        rows.push(splitTableRow(lines[i]));
+        i++;
+      }
+      out.push("<table><thead><tr>" + header.map((h) => `<th>${inlineMd(h)}</th>`).join("") +
+        "</tr></thead><tbody>" +
+        rows.map((r) => "<tr>" + r.map((c) => `<td>${inlineMd(c)}</td>`).join("") + "</tr>").join("") +
+        "</tbody></table>");
+      continue;
+    }
+
+    // 제목
+    const h = line.match(/^(#{1,4})\s+(.*)$/);
+    if (h) { out.push(`<h${h[1].length}>${inlineMd(h[2])}</h${h[1].length}>`); i++; continue; }
+
+    // 가로줄
+    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { out.push("<hr>"); i++; continue; }
+
+    // 인용문 (blockquote) — 연속된 ">" 줄을 하나의 블록으로 처리
+    // (escapeHtml 이후이므로 ">"는 "&gt;"로 표현됨)
+    if (/^\s*&gt;\s?/.test(line)) {
+      const quoted = [];
+      while (i < lines.length && /^\s*&gt;\s?/.test(lines[i])) {
+        quoted.push(lines[i].replace(/^\s*&gt;\s?/, ""));
+        i++;
+      }
+      const joined = quoted.join("\n");
+      // 인용문 안에 코드블록/수식 플레이스홀더가 있으면 재귀 대신 행 단위 처리
+      // (재귀 호출에서는 플레이스홀더를 복원할 수 없어 원문이 노출되기 때문)
+      const inner = /%%(CB|MATH)\d+%%/.test(joined)
+        ? quoted.map(inlineMd).join("\n")
+        : renderMarkdown(joined);
+      out.push("<blockquote>" + inner + "</blockquote>");
+      continue;
+    }
+
+    // 순서 없는 목록
+    if (/^\s*[-*]\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^\s*[-*]\s+/, ""));
+        i++;
+      }
+      out.push("<ul>" + items.map((t) => `<li>${inlineMd(t)}</li>`).join("") + "</ul>");
+      continue;
+    }
+
+    // 순서 있는 목록
+    if (/^\s*\d+\.\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^\s*\d+\.\s+/, ""));
+        i++;
+      }
+      out.push("<ol>" + items.map((t) => `<li>${inlineMd(t)}</li>`).join("") + "</ol>");
+      continue;
+    }
+
+    out.push(inlineMd(line));
+    i++;
+  }
+  s = out.join("\n");
+
+  // 블록 요소 주변의 줄바꿈 제거 (white-space: pre-wrap 환경에서 불필요한 빈 줄 방지)
+  s = s.replace(/\n?(<\/?(?:table|thead|tbody|tr|th|td|ul|ol|li|h[1-4]|hr|blockquote)[^>]*>)\n?/g, "$1");
+
+  // 코드블록 복원 (헤더 바: 언어명 + 복사 버튼)
+  s = s.replace(/%%CB(\d+)%%/g, (_, n) => {
+    const cb = codeBlocks[+n];
+    return `<div class="code-block"><div class="code-head"><span class="code-lang">${escapeHtml(cb.lang || "code")}</span><span class="code-head-btns"><button class="act wrap-toggle" title="${t("wrap_tip")}">${t("wrap")}</button><button class="act code-copy">${t("copy")}</button></span></div><pre><code>${cb.code}</code></pre></div>`;
+  });
+  // 수식 복원
+  s = s.replace(/%%MATH(\d+)%%/g, (_, n) => mathSegs[+n]);
+  return s;
+}
+
+// ---------- 렌더링 ----------
+function renderConvList() {
+  convListEl.innerHTML = "";
+  for (const c of conversations) {
+    const div = document.createElement("div");
+    div.className = "conv-item" + (c.id === currentConvId ? " active" : "");
+    const title = document.createElement("span");
+    title.className = "title";
+    title.textContent = (c.pinned ? "📌 " : "") + c.title;
+    title.ondblclick = () => renameConversation(c);
+    const pin = document.createElement("button");
+    pin.className = "pin" + (c.pinned ? " on" : "");
+    pin.textContent = "📌";
+    pin.title = c.pinned ? t("pin_on") : t("pin_off");
+    pin.onclick = (e) => { e.stopPropagation(); togglePinned(c); };
+    const del = document.createElement("button");
+    del.className = "del";
+    del.textContent = "✕";
+    del.title = t("del");
+    del.onclick = (e) => { e.stopPropagation(); deleteConversation(c.id); };
+    div.append(title, pin, del);
+    div.onclick = () => selectConversation(c.id);
+    convListEl.appendChild(div);
+  }
+}
+
+function renderPresetOptions() {
+  newChatPreset.innerHTML = `<option value="">${t("no_preset")}</option>`;
+  for (const p of presets) {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = t("preset_prefix") + p.name;
+    newChatPreset.appendChild(opt);
+  }
+}
+
+function currentConv() {
+  return conversations.find((c) => c.id === currentConvId) || null;
+}
+
+function renderMessages() {
+  messagesEl.innerHTML = "";
+  const conv = currentConv();
+  if (!conv) {
+    messagesEl.innerHTML = `<div id="empty-hint">${t("empty_hint")}</div>`;
+    presetBadge.style.display = "none";
+    return;
+  }
+  const lastAssistantIdx = (() => {
+    for (let i = conv.messages.length - 1; i >= 0; i--) {
+      if (conv.messages[i].role === "assistant") return i;
+    }
+    return -1;
+  })();
+  conv.messages.forEach((m, idx) => appendMessageEl(m, idx === lastAssistantIdx && !sending));
+  const preset = presets.find((p) => p.id === conv.preset_id);
+  if (preset) {
+    presetBadge.textContent = t("preset_prefix") + preset.name;
+    presetBadge.style.display = "";
+  } else {
+    presetBadge.style.display = "none";
+  }
+  if (conv.model) {
+    renderModelSelect(conv.model);
+  }
+  updateAttachVisibility();
+  scrollToBottom();
+}
+
+function isTextContent(c) { return typeof c === "string"; }
+
+function contentText(c) {
+  // 복사/제목용: 배열 content에서 텍스트만 추출
+  if (isTextContent(c)) return c;
+  return (c || []).filter((p) => p.type === "text").map((p) => p.text).join("\n");
+}
+
+function appendMessageEl(m, isLastAssistant = false) {
+  const div = document.createElement("div");
+  div.className = "msg " + m.role;
+  let bodyHtml;
+  if (!isTextContent(m.content)) {
+    // 멀티모달 content 배열: 텍스트는 마크다운, 이미지는 <img> + 다운로드 버튼
+    bodyHtml = (m.content || []).map((p) => {
+      if (p.type === "text") return escapeHtml(normalizeModelEntities(p.text));
+      if (p.type === "image" && p.url) {
+        return `<div class="msg-image"><img src="${escapeHtml(p.url)}" alt="${t("img_alt")}" loading="lazy">`
+             + `<a class="dl-img" href="${escapeHtml(p.url)}" download>${t("save_img")}</a></div>`;
+      }
+      return "";
+    }).join("");
+    bodyHtml = `<div>${bodyHtml}</div>`; // white-space:pre-wrap 영향 제거용 래퍼
+  } else {
+    bodyHtml = m.role === "assistant" ? renderMarkdown(m.content) : escapeHtml(normalizeModelEntities(m.content));
+  }
+  let html = bodyHtml;
+  // 사고 과정(추론) 접이식 블록
+  if (m.role === "assistant" && m.reasoning) {
+    html = '<details class="think-block"><summary>' + t("think_done") + '</summary><div class="think-body">' + escapeHtml(m.reasoning) + '</div></details>' + html;
+  }
+  // 액션 버튼 (hover 시 노출)
+  html += `<div class="msg-actions">`
+       +    (m.role === "assistant" && m.model ? `<span class="model-label" title="${t("answered_by")}">${escapeHtml(m.model)}</span>` : "")
+       +    `<button class="act copy-act" title="${t("copy_tip")}">${t("copy")}</button>`
+       +    (m.role === "assistant" && isLastAssistant
+             ? `<button class="act regen-act" title="${t("regen_tip")}">${t("regen")}</button>` : "")
+       +  `</div>`;
+  // 답변 변형 네비게이터 (< 2/3 >)
+  if (m.role === "assistant" && Array.isArray(m.variants) && m.variants.length > 1) {
+    const active = typeof m.active === "number" ? m.active : m.variants.length - 1;
+    html += `<div class="variant-nav" data-seq="${m.seq || ""}">
+               <button class="var-btn var-prev" ${active <= 0 ? "disabled" : ""}>‹</button>
+               <span class="var-pos">${active + 1}/${m.variants.length}</span>
+               <button class="var-btn var-next" ${active >= m.variants.length - 1 ? "disabled" : ""}>›</button>
+             </div>`;
+  }
+  div.innerHTML = html;
+  div.dataset.content = contentText(m.content); // 복사 버튼용(텍스트만)
+  if (m.seq) div.dataset.seq = m.seq;
+  if (isLastAssistant && m.role === "assistant") div.classList.add("last-assistant");
+  messagesEl.appendChild(div);
+  return div;
+}
+
+// 클립보드 복사 공통 처리
+function copyText(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    if (!btn) return;
+    const orig = btn.textContent;
+    btn.textContent = t("copied");
+    setTimeout(() => { btn.textContent = orig; }, 1200);
+  }).catch(() => {});
+}
+
+function scrollToBottom() {
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+// ---------- 대화 동작 ----------
+async function loadConversations() {
+  conversations = await api("/api/conversations");
+  renderConvList();
+}
+
+async function selectConversation(id) {
+  currentConvId = id;
+  renderConvList();
+  renderMessages();
+}
+
+async function createConversation() {
+  const presetId = newChatPreset.value || null;
+  const preset = presets.find((p) => p.id === presetId);
+  const conv = await api("/api/conversations", {
+    method: "POST",
+    body: JSON.stringify({ preset_id: presetId, model: (preset && preset.model) || modelSelect.value }),
+  });
+  conversations.unshift(conv);
+  currentConvId = conv.id;
+  renderConvList();
+  renderMessages();
+  inputEl.focus();
+}
+
+async function renameConversation(c) {
+  const title = prompt(t("rename_prompt"), c.title);
+  if (!title || title === c.title) return;
+  await api(`/api/conversations/${c.id}`, { method: "PATCH", body: JSON.stringify({ title }) });
+  c.title = title;
+  renderConvList();
+}
+
+async function deleteConversation(id) {
+  if (!confirm(t("confirm_del_conv"))) return;
+  await api(`/api/conversations/${id}`, { method: "DELETE" });
+  conversations = conversations.filter((c) => c.id !== id);
+  if (currentConvId === id) currentConvId = null;
+  renderConvList();
+  renderMessages();
+}
+
+async function togglePinned(c) {
+  const updated = await api(`/api/conversations/${c.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ pinned: !c.pinned }),
+  });
+  Object.assign(c, updated);
+  // 서버 정렬(pinned DESC, updated_at DESC) 기준으로 다시 로드해 반영
+  await loadConversations();
+}
+
+// ---------- 전체 삭제 ----------
+function openBulkDeleteModal() {
+  const total = conversations.length;
+  const pinned = conversations.filter((c) => c.pinned).length;
+  $("bd-summary").textContent =
+    t("bd_summary", { n: total - pinned }) +
+    (pinned > 0 ? t("bd_summary_keep", { n: pinned }) : "");
+  $("bd-delete-pinned").checked = false;
+  $("bd-warning").style.display = "none";
+  $("bulk-delete-modal").classList.add("open");
+}
+
+async function confirmBulkDelete() {
+  const keepPinned = !$("bd-delete-pinned").checked;
+  await api("/api/conversations/bulk-delete", {
+    method: "POST",
+    body: JSON.stringify({ keep_pinned: keepPinned }),
+  });
+  $("bulk-delete-modal").classList.remove("open");
+  await loadConversations();
+  currentConvId = null;
+  renderConvList();
+  renderMessages();
+}
+
+// ---------- 전송 / SSE ----------
+async function sendMessage(regenerate = false) {
+  const text = regenerate ? "" : inputEl.value.trim();
+  if (!regenerate && !text && pendingImages.length === 0) return;
+  if (sending) return;
+  if (!currentConvId && !regenerate) await createConversation();
+  const conv = currentConv();
+  if (!conv || !conv.id) return;
+  if (regenerate && (conv.messages.length === 0 || conv.messages[conv.messages.length - 1].role !== "assistant")) return;
+
+  sending = true;
+  sendBtn.disabled = true;
+
+  let assistantEl;
+  let userContent;
+  if (!regenerate) {
+    inputEl.value = "";
+    autoGrow();
+    // 첨부 이미지 업로드 → URL 참조 배열 content 구성
+    const uploadedUrls = [];
+    for (const img of pendingImages) {
+      try {
+        const r = await api("/api/uploads", {
+          method: "POST",
+          body: JSON.stringify({ data_uri: img.dataUri }),
+        });
+        uploadedUrls.push(r.url);
+      } catch (e) {
+        alert(t("upload_fail", { msg: e.message }));
+      }
+    }
+    if (uploadedUrls.length > 0) {
+      userContent = [];
+      if (text) userContent.push({ type: "text", text });
+      userContent.push(...uploadedUrls.map((u) => ({ type: "image", url: u })));
+    } else {
+      userContent = text;
+    }
+    clearPendingImages();
+
+    const userMsg = { role: "user", content: userContent };
+    conv.messages.push(userMsg);
+    appendMessageEl(userMsg);
+    assistantEl = document.createElement("div");
+    assistantEl.className = "msg assistant streaming";
+    messagesEl.appendChild(assistantEl);
+  } else {
+    // 기존 마지막 답변을 스트리밍 상태로 교체
+    const last = conv.messages[conv.messages.length - 1];
+    last.content = "";
+    delete last.variants;
+    const els = messagesEl.querySelectorAll(".msg.assistant");
+    assistantEl = els[els.length - 1];
+    assistantEl.classList.add("streaming");
+    assistantEl.innerHTML = "";
+  }
+  scrollToBottom();
+
+  // 이미지 출력 가능 모델이면 modalities 요청
+  const caps = modelCaps[modelSelect.value];
+  const modalities = caps && caps.output_image ? ["image", "text"] : null;
+
+  let fullText = "";
+  let fullReasoning = "";
+  let thinkEl = null;
+  const finalizeThink = () => {
+    if (thinkEl) {
+      thinkEl.classList.remove("streaming");
+      thinkEl.querySelector("summary").textContent = t("think_done");
+    }
+  };
+  try {
+    const resp = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conversation_id: currentConvId,
+        message: typeof userContent === "string" ? userContent : (userContent?.find((p) => p.type === "text")?.text ?? ""),
+        model: modelSelect.value,
+        web_search: webSearchOn,
+        regenerate_last: regenerate,
+        modalities,
+      }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.detail || t("request_fail", { status: resp.status }));
+    }
+
+    // SSE 파싱
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split("\n\n");
+      buffer = events.pop();
+      for (const block of events) {
+        const lines = block.split("\n");
+        let event = "message", data = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) event = line.slice(7);
+          else if (line.startsWith("data: ")) data += line.slice(6);
+        }
+        if (!data) continue;
+        const payload = JSON.parse(data);
+        if (event === "token") {
+          fullText += payload;
+          finalizeThink();
+          assistantEl.innerHTML = renderMarkdown(fullText);
+          if (thinkEl) assistantEl.appendChild(thinkEl); // innerHTML 초기화로 사고 블록 유지
+          scrollToBottom();
+        } else if (event === "reasoning") {
+          if (!thinkEl) {
+            thinkEl = document.createElement("details");
+            thinkEl.className = "think-block streaming";
+            var tb = document.createElement("div");
+            tb.className = "think-body";
+            thinkEl.innerHTML = "<summary>" + t("thinking") + "</summary>";
+            thinkEl.appendChild(tb);
+            assistantEl.prepend(thinkEl);
+          }
+          fullReasoning += payload;
+          thinkEl.querySelector(".think-body").textContent = fullReasoning;
+          scrollToBottom();
+        } else if (event === "image") {
+          // 출력 이미지: URL만 수신 (파일은 서버에 저장됨)
+          assistantEl.insertAdjacentHTML("beforeend",
+            `<div class="msg-image"><img src="${escapeHtml(payload)}" alt="${t("img_alt")}">`
+            + `<a class="dl-img" href="${escapeHtml(payload)}" download>${t("save_img")}</a></div>`);
+          scrollToBottom();
+        } else if (event === "error") {
+          throw new Error(payload);
+        } else if (event === "done") {
+          conv.title = payload.title;
+          renderConvList();
+        }
+      }
+    }
+    // 잠금 해제 후 최종 상태(변형 이력 포함)로 갱신 — 재답변 버튼이 렌더링되도록
+    finalizeThink();
+    sending = false;
+    sendBtn.disabled = false;
+    await loadConversations();
+    renderMessages();
+    inputEl.focus();
+    scrollToBottom();
+  } catch (e) {
+    assistantEl.classList.remove("streaming");
+    assistantEl.innerHTML = `<span style="color:var(--danger)">${t("error_prefix")}${escapeHtml(e.message)}</span>`;
+    sending = false;
+    sendBtn.disabled = false;
+    inputEl.focus();
+    scrollToBottom();
+  }
+}
+
+// ---------- 프리셋 관리 ----------
+async function loadPresets() {
+  presets = await api("/api/presets");
+  renderPresetOptions();
+}
+
+function renderPresetList() {
+  const list = $("preset-list");
+  list.innerHTML = "";
+  for (const p of presets) {
+    const item = document.createElement("div");
+    item.className = "preset-item";
+    const info = document.createElement("div");
+    info.className = "info";
+    info.innerHTML = `<div class="name">${escapeHtml(p.name)}</div>
+                      <div class="desc">${escapeHtml(p.description || p.system_prompt.slice(0, 60))}</div>`;
+    const editBtn = document.createElement("button");
+    editBtn.className = "icon-btn";
+    editBtn.textContent = t("edit");
+    editBtn.onclick = () => openPresetEditor(p);
+    const delBtn = document.createElement("button");
+    delBtn.className = "icon-btn danger";
+    delBtn.textContent = t("del");
+    delBtn.onclick = async () => {
+      if (!confirm(t("confirm_del_preset", { name: p.name }))) return;
+      await api(`/api/presets/${p.id}`, { method: "DELETE" });
+      await loadPresets();
+      renderPresetList();
+      renderMessages();
+    };
+    item.append(info, editBtn, delBtn);
+    list.appendChild(item);
+  }
+}
+
+function openPresetEditor(p) {
+  editingPresetId = p ? p.id : null;
+  $("preset-edit-title").textContent = p ? t("pe_edit") : t("pe_new");
+  $("pe-name").value = p ? p.name : "";
+  $("pe-desc").value = p ? p.description || "" : "";
+  $("pe-prompt").value = p ? p.system_prompt : "";
+  $("pe-model").value = p && p.model ? p.model : "";
+  $("preset-edit-modal").classList.add("open");
+}
+
+async function savePreset() {
+  const body = {
+    name: $("pe-name").value.trim(),
+    description: $("pe-desc").value.trim(),
+    system_prompt: $("pe-prompt").value.trim(),
+    model: $("pe-model").value.trim() || null,
+  };
+  if (!body.name || !body.system_prompt) {
+    alert(t("required_fields"));
+    return;
+  }
+  if (editingPresetId) {
+    await api(`/api/presets/${editingPresetId}`, { method: "PUT", body: JSON.stringify(body) });
+  } else {
+    await api("/api/presets", { method: "POST", body: JSON.stringify(body) });
+  }
+  $("preset-edit-modal").classList.remove("open");
+  await loadPresets();
+  renderPresetList();
+  renderMessages();
+}
+
+// ---------- 모델 관리 ----------
+function renderModelSelect(defaultModel) {
+  const prev = defaultModel ?? modelSelect.value;
+  if (prev && !favoriteModels.includes(prev)) favoriteModels.unshift(prev);
+  modelSelect.innerHTML = favoriteModels.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join("");
+  modelSelect.value = prev && favoriteModels.includes(prev) ? prev : favoriteModels[0];
+}
+
+async function loadModels() {
+  favoriteModels = await api("/api/models");
+}
+
+let searchTimer = null;
+let searchSeq = 0;
+
+function fmtPrice(p) {
+  if (!p || Number(p) === 0) return "FREE";
+  return "$" + Number(p).toExponential(2);
+}
+
+function renderSearchResults(models) {
+  const list = $("model-search-results");
+  list.innerHTML = "";
+  for (const m of models) {
+    const item = document.createElement("div");
+    item.className = "model-item";
+    item.innerHTML = `<div class="info">
+        <div class="name">${escapeHtml(m.name)} <span style="color:var(--fg-dim);font-weight:400">${escapeHtml(m.id)}</span>${m.id.endsWith(":free") ? '<span class="model-badge">FREE</span>' : ""}${(m.output_modalities || []).includes("image") ? '<span class="model-badge" title="이미지 출력 가능">🖼</span>' : ""}</div>
+        <div class="desc">${t("ctx", { n: m.context_length ? m.context_length.toLocaleString() : "?" })} · in ${fmtPrice(m.prompt_price)} / out ${fmtPrice(m.completion_price)}</div>
+      </div>`;
+    const addBtn = document.createElement("button");
+    addBtn.className = "add-btn";
+    const isFav = favoriteModels.includes(m.id);
+    addBtn.textContent = isFav ? t("added") : t("add_btn");
+    addBtn.disabled = isFav;
+    addBtn.onclick = async () => {
+      try {
+        await api("/api/models", { method: "POST", body: JSON.stringify({ model_id: m.id }) });
+        await loadModels();
+        renderModelSelect();
+        renderSearchResults(models);
+        renderFavoriteModels();
+      } catch (e) {
+        alert(e.message);
+      }
+    };
+    item.appendChild(addBtn);
+    list.appendChild(item);
+  }
+}
+
+async function searchModels(query) {
+  const seq = ++searchSeq;
+  const list = $("model-search-results");
+  try {
+    const models = await api(`/api/openrouter/models?query=${encodeURIComponent(query)}`);
+    if (seq !== searchSeq) return; // 이전 요청 무시
+    renderSearchResults(models);
+  } catch (e) {
+    if (seq === searchSeq) list.innerHTML = `<div class="model-item"><span style="color:var(--danger)">${t("search_fail", { msg: escapeHtml(e.message) })}</span></div>`;
+  }
+}
+
+function renderFavoriteModels() {
+  const list = $("favorite-model-list");
+  list.innerHTML = "";
+  for (const id of favoriteModels) {
+    const item = document.createElement("div");
+    item.className = "model-item";
+    const info = document.createElement("div");
+    info.className = "info";
+    info.innerHTML = `<div class="name">${escapeHtml(id)}</div>`;
+    const delBtn = document.createElement("button");
+    delBtn.className = "del";
+    delBtn.textContent = t("del");
+    delBtn.onclick = async () => {
+      if (!confirm(t("confirm_del_model", { id }))) return;
+      await api(`/api/models/${id}`, { method: "DELETE" }); // model_id는 :path 라우트라 슬래시 인코딩 없이 그대로 전송
+      await loadModels();
+      renderModelSelect();
+      renderFavoriteModels();
+    };
+    item.append(info, delBtn);
+    list.appendChild(item);
+  }
+}
+
+// ---------- 입력창 ----------
+function autoGrow() {
+  inputEl.style.height = "auto";
+  inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + "px";
+}
+
+// ---------- 이벤트 바인딩 ----------
+$("new-chat-btn").onclick = createConversation;
+sendBtn.onclick = () => sendMessage(false);
+inputEl.addEventListener("input", autoGrow);
+inputEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+webToggle.onclick = () => {
+  webSearchOn = !webSearchOn;
+  webToggle.classList.toggle("on", webSearchOn);
+};
+modelSelect.onchange = async () => {
+  updateAttachVisibility();
+  if (currentConvId) {
+    await api(`/api/conversations/${currentConvId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ model: modelSelect.value }),
+    }).catch(() => {});
+    const conv = currentConv();
+    if (conv) conv.model = modelSelect.value;
+  }
+};
+$("manage-presets-btn").onclick = () => {
+  renderPresetList();
+  $("preset-modal").classList.add("open");
+};
+$("preset-close-btn").onclick = () => $("preset-modal").classList.remove("open");
+$("preset-add-btn").onclick = () => openPresetEditor(null);
+$("pe-cancel-btn").onclick = () => $("preset-edit-modal").classList.remove("open");
+$("pe-save-btn").onclick = savePreset;
+for (const id of ["preset-modal", "preset-edit-modal", "model-modal", "bulk-delete-modal"]) {
+  $(id).addEventListener("click", (e) => {
+    if (e.target === $(id)) $(id).classList.remove("open");
+  });
+}
+$("delete-all-btn").onclick = openBulkDeleteModal;
+$("bd-cancel-btn").onclick = () => $("bulk-delete-modal").classList.remove("open");
+$("bd-confirm-btn").onclick = confirmBulkDelete;
+$("bd-delete-pinned").onchange = (e) => {
+  $("bd-warning").style.display = e.target.checked ? "" : "none";
+};
+
+// ---------- 메시지 액션 (이벤트 위임: 스트리밍 중 innerHTML 재렌더와 무관하게 동작) ----------
+messagesEl.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".act, .var-btn");
+  if (!btn || sending) return;
+  const bubble = btn.closest(".msg");
+
+  if (btn.classList.contains("wrap-toggle")) {
+    const block = btn.closest(".code-block");
+    if (block) {
+      block.classList.toggle("wrapped");
+      btn.classList.toggle("on", block.classList.contains("wrapped"));
+    }
+    return;
+  }
+  if (btn.classList.contains("code-copy")) {
+    // 코드블록 복사: DOM에서 원문 추출
+    const pre = btn.closest(".code-block")?.querySelector("pre code");
+    if (pre) copyText(pre.textContent, btn);
+    return;
+  }
+  if (btn.classList.contains("copy-act")) {
+    // 메시지 복사: data-content에 저장한 원본 텍스트 사용
+    copyText(bubble?.dataset.content ?? "", btn);
+    return;
+  }
+  if (btn.classList.contains("regen-act")) {
+    await sendMessage(true);
+    return;
+  }
+  if (btn.classList.contains("var-prev") || btn.classList.contains("var-next")) {
+    const nav = btn.closest(".variant-nav");
+    const seq = Number(nav?.dataset.seq);
+    const [curStr, totalStr] = nav.querySelector(".var-pos").textContent.split("/");
+    let next = Number(curStr) - 1 + (btn.classList.contains("var-next") ? 1 : -1);
+    const total = Number(totalStr);
+    if (!seq || next < 0 || next >= total) return;
+    try {
+      await api(`/api/messages/${seq}`, {
+        method: "PATCH",
+        body: JSON.stringify({ active: next }),
+      });
+      await loadConversations();
+      renderMessages();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+});
+$("manage-models-btn").onclick = async () => {
+  await loadModels();
+  renderFavoriteModels();
+  $("model-search-results").innerHTML = "";
+  $("mm-search").value = "";
+  $("model-modal").classList.add("open");
+};
+$("model-close-btn").onclick = () => $("model-modal").classList.remove("open");
+$("mm-search").addEventListener("input", (e) => {
+  clearTimeout(searchTimer);
+  const q = e.target.value.trim();
+  searchTimer = setTimeout(() => searchModels(q), 300);
+});
+
+// ---------- 모델 능력 / 이미지 첨부 ----------
+async function loadModelCaps() {
+  try {
+    modelCaps = await api("/api/models/capabilities");
+  } catch (e) {
+    modelCaps = {};
+  }
+  updateAttachVisibility();
+}
+
+function updateAttachVisibility() {
+  const caps = modelCaps[modelSelect.value];
+  $("attach-btn").style.display = caps && caps.input_image ? "" : "none";
+  if (!(caps && caps.input_image)) clearPendingImages();
+}
+
+function fileToDataUri(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function addImageFiles(files) {
+  for (const f of files) {
+    if (!f.type.startsWith("image/")) continue;
+    if (f.size > 4 * 1024 * 1024) { alert(t("file_too_big", { name: f.name })); continue; }
+    const dataUri = await fileToDataUri(f);
+    pendingImages.push({ dataUri, name: f.name });
+  }
+  renderAttachPreview();
+}
+
+function renderAttachPreview() {
+  const box = $("attach-preview");
+  box.innerHTML = "";
+  pendingImages.forEach((img, i) => {
+    const t = document.createElement("div");
+    t.className = "thumb";
+    t.innerHTML = `<img src="${img.dataUri}" alt="">`;
+    const rm = document.createElement("button");
+    rm.className = "rm";
+    rm.textContent = "✕";
+    rm.onclick = () => { pendingImages.splice(i, 1); renderAttachPreview(); };
+    t.appendChild(rm);
+    box.appendChild(t);
+  });
+}
+
+function clearPendingImages() {
+  pendingImages = [];
+  renderAttachPreview();
+}
+
+$("attach-btn").onclick = () => $("file-input").click();
+$("file-input").onchange = async (e) => {
+  await addImageFiles([...e.target.files]);
+  e.target.value = "";
+};
+inputEl.addEventListener("paste", async (e) => {
+  const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith("image/"));
+  if (files.length && modelCaps[modelSelect.value]?.input_image) {
+    e.preventDefault();
+    await addImageFiles(files);
+  }
+});
+["dragover", "drop"].forEach((ev) => {
+  inputEl.addEventListener(ev, async (e) => {
+    if (!modelCaps[modelSelect.value]?.input_image) return;
+    e.preventDefault();
+    if (ev === "drop") await addImageFiles([...(e.dataTransfer?.files || [])]);
+  });
+});
+
+// ---------- 초기화 ----------
+(async function init() {
+  applyLang();
+  try {
+    const cfg = await api("/api/config");
+    await loadModels();
+    renderModelSelect(cfg.default_model || favoriteModels[0]);
+    await loadModelCaps();
+    await loadPresets();
+    await loadConversations();
+    if (conversations.length) selectConversation(conversations[0].id);
+  } catch (e) {
+    messagesEl.innerHTML = `<div id="empty-hint">${t("init_error", { msg: escapeHtml(e.message) })}</div>`;
+  }
+})();
+</script>
+</body>
+</html>
