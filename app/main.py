@@ -10,14 +10,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
-from . import images, openrouter, storage
+from . import credits, images, openrouter, storage
 
 load_dotenv()
 
 DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "openai/gpt-4o-mini")
 BASE_SYSTEM_PROMPT = os.environ.get("BASE_SYSTEM_PROMPT", "")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-DEFAULT_PORT = int(os.environ.get("PORT", "8000"))
+DEFAULT_PORT = int(os.environ.get("PORT", "8004"))
 
 app = FastAPI(title="OpenRouter 로컬 챗")
 
@@ -106,6 +106,32 @@ def serve_upload(filename: str):
 @app.get("/api/config")
 def config():
     return {"default_model": DEFAULT_MODEL}
+
+
+@app.get("/api/credits")
+async def get_credits():
+    """OpenRouter 계정의 크레딧 잔액 / 사용량. 캐시 TTL=60초."""
+    try:
+        info = await credits.fetch_key_info(force=False)
+    except openrouter.OpenRouterError as e:
+        raise HTTPException(502, str(e))
+    return {
+        "label": info.get("label"),
+        "limit": info.get("limit"),
+        "limit_remaining": info.get("limit_remaining"),
+        "usage": info.get("usage"),
+        "usage_daily": info.get("usage_daily"),
+        "usage_weekly": info.get("usage_weekly"),
+        "usage_monthly": info.get("usage_monthly"),
+        "is_free_tier": info.get("is_free_tier"),
+    }
+
+
+@app.post("/api/credits/refresh")
+async def refresh_credits():
+    """크레딧 캐시를 무효화하고 즉시 재조회."""
+    credits.invalidate_cache()
+    return await get_credits()
 
 
 # ---------- 대화 ----------
@@ -320,6 +346,7 @@ async def chat(body: ChatRequest):
         annotations = None
         image_urls: list[str] = []
         full_reasoning = ""
+        last_usage: dict | None = None
 
         def sse(event: str, data) -> str:
             return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -341,6 +368,9 @@ async def chat(body: ChatRequest):
             elif kind == "annotations":
                 annotations = data
                 yield sse("annotations", data)
+            elif kind == "usage":
+                last_usage = data
+                yield sse("usage", data)
             elif kind == "error":
                 yield sse("error", data)
                 return
@@ -356,6 +386,7 @@ async def chat(body: ChatRequest):
             storage.replace_last_assistant_message(
                 body.conversation_id, assistant_content, annotations, model,
                 reasoning=full_reasoning or None,
+                usage=last_usage,
             )
         else:
             assistant_msg = {"role": "assistant", "content": assistant_content, "model": model}
@@ -363,6 +394,8 @@ async def chat(body: ChatRequest):
                 assistant_msg["annotations"] = annotations
             if full_reasoning:
                 assistant_msg["reasoning"] = full_reasoning
+            if last_usage:
+                assistant_msg["usage"] = last_usage
             storage.append_messages(
                 body.conversation_id,
                 [

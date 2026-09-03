@@ -115,6 +115,8 @@ def _init_db(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE messages ADD COLUMN variant_models TEXT")
     if "reasoning" not in msg_cols:
         conn.execute("ALTER TABLE messages ADD COLUMN reasoning TEXT")
+    if "usage" not in msg_cols:
+        conn.execute("ALTER TABLE messages ADD COLUMN usage TEXT")
 
 
 def _migrate_json_if_needed(conn: sqlite3.Connection) -> None:
@@ -184,7 +186,7 @@ _bootstrap()
 
 
 def _row_to_conversation(row: sqlite3.Row, messages: list) -> dict:
-    return {
+    conv = {
         "id": row["id"],
         "title": row["title"],
         "preset_id": row["preset_id"],
@@ -194,12 +196,51 @@ def _row_to_conversation(row: sqlite3.Row, messages: list) -> dict:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+    # 회당 usage 합산 (사이드바 비용 칩 / 메시지 액션 줄 표시용)
+    cost = 0.0
+    prompt_tokens = 0
+    completion_tokens = 0
+    has_usage = False
+    for m in messages:
+        u = m.get("usage")
+        if not u:
+            continue
+        has_usage = True
+        if isinstance(u.get("cost"), (int, float)):
+            cost += float(u["cost"])
+        if isinstance(u.get("prompt_tokens"), int):
+            prompt_tokens += u["prompt_tokens"]
+        if isinstance(u.get("completion_tokens"), int):
+            completion_tokens += u["completion_tokens"]
+    if has_usage:
+        conv["usage_total"] = {
+            "cost": cost,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+        }
+    return conv
+
+
+def _usage_aggregate_sql(conv_ids: list[str]) -> tuple[str, list]:
+    """대화 ID 목록에 대해 회당 usage 합계 쿼리. conv_ids 비어있으면 전체."""
+    if conv_ids:
+        placeholders = ",".join("?" for _ in conv_ids)
+        return (
+            "SELECT conversation_id, usage FROM messages "
+            f"WHERE role='assistant' AND usage IS NOT NULL AND conversation_id IN ({placeholders})",
+            conv_ids,
+        )
+    return (
+        "SELECT conversation_id, usage FROM messages "
+        "WHERE role='assistant' AND usage IS NOT NULL",
+        [],
+    )
 
 
 def _get_messages(conn: sqlite3.Connection, conv_id: str) -> list:
     msgs = []
     for r in conn.execute(
-        "SELECT seq, role, content, annotations, variants, active, variant_models, reasoning "
+        "SELECT seq, role, content, annotations, variants, active, variant_models, reasoning, usage "
         "FROM messages WHERE conversation_id = ? ORDER BY seq",
         (conv_id,),
     ):
@@ -235,6 +276,11 @@ def _get_messages(conn: sqlite3.Connection, conv_id: str) -> list:
                 pass
         if r["reasoning"]:
             msg["reasoning"] = r["reasoning"]
+        if r["usage"]:
+            try:
+                msg["usage"] = json.loads(r["usage"])
+            except json.JSONDecodeError:
+                pass
         msgs.append(msg)
     return msgs
 
@@ -509,7 +555,8 @@ def count_conversations() -> dict:
 
 
 def replace_last_assistant_message(conv_id: str, new_content: str, annotations=None,
-                                   model: str | None = None, reasoning: str | None = None):
+                                   model: str | None = None, reasoning: str | None = None,
+                                   usage: dict | None = None):
     """마지막 assistant 메시지를 재생성 결과로 교체하고 기존 답변을 보관.
 
     불변식: variants는 모든 답변(현재 답변 포함)의 배열이고,
@@ -536,7 +583,7 @@ def replace_last_assistant_message(conv_id: str, new_content: str, annotations=N
             models.append(model)
             conn.execute(
                 "UPDATE messages SET content = ?, variants = ?, active = ?, "
-                "annotations = ?, variant_models = ?, reasoning = ? WHERE seq = ?",
+                "annotations = ?, variant_models = ?, reasoning = ?, usage = ? WHERE seq = ?",
                 (
                     new_content,
                     json.dumps(variants, ensure_ascii=False),
@@ -545,6 +592,7 @@ def replace_last_assistant_message(conv_id: str, new_content: str, annotations=N
                     if annotations is not None else None,
                     json.dumps(models, ensure_ascii=False),
                     reasoning,
+                    json.dumps(usage, ensure_ascii=False) if usage is not None else None,
                     row["seq"],
                 ),
             )
@@ -607,7 +655,8 @@ def append_messages(conv_id: str, messages: list) -> None:
                 )
                 conn.execute(
                     "INSERT INTO messages (conversation_id, role, content, annotations, "
-                    "variants, active, variant_models, reasoning) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+                    "variants, active, variant_models, reasoning, usage) "
+                    "VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)",
                     (conv_id, m["role"], stored_content,
                      json.dumps(m.get("annotations"), ensure_ascii=False)
                      if m.get("annotations") is not None else None,
@@ -617,7 +666,9 @@ def append_messages(conv_id: str, messages: list) -> None:
                      # 답변을 생성한 모델 기록 (변형별 모델 추적)
                      json.dumps([m.get("model")], ensure_ascii=False)
                      if is_assistant and m.get("model") else None,
-                     m.get("reasoning") if is_assistant else None),
+                     m.get("reasoning") if is_assistant else None,
+                     json.dumps(m.get("usage"), ensure_ascii=False)
+                     if is_assistant and m.get("usage") else None),
                 )
             # 첫 사용자 메시지로 제목 자동 설정
             title_row = conn.execute(

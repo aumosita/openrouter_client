@@ -23,7 +23,7 @@ OpenRouter API를 사용하는 로컬 대화형 웹 서비스입니다. 웹 검�
 ```
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
-.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8004
 ```
 
 ### macOS / Linux
@@ -31,7 +31,7 @@ python -m venv .venv
 ```
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8004
 ```
 
 실행 전에 `.env.example` 파일을 복사해 `.env`를 만들고 API 키를 입력하세요:
@@ -40,7 +40,7 @@ python3 -m venv .venv
 OPENROUTER_API_KEY=sk-or-...
 ```
 
-이후 브라우저에서 http://localhost:8000 접속.
+이후 브라우저에서 http://localhost:8004 접속.
 
 ## 사용법
 
