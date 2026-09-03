@@ -728,10 +728,10 @@ function renderMarkdown(text) {
 // ---------- 렌더링 ----------
 function formatCost(usd) {
   if (typeof usd !== "number" || !isFinite(usd)) return null;
-  if (usd === 0) return "$0.00";
-  if (usd < 0.0001) return "<$0.0001";
-  if (usd < 1) return `$${usd.toFixed(4)}`;
-  return `$${usd.toFixed(2)}`;
+  if (usd === 0) return "$0.0000";
+  if (Math.abs(usd) < 0.00005) return "<$0.0001";
+  if (Math.abs(usd) >= 1000) return `$${usd.toFixed(2)}`;
+  return `$${usd.toFixed(4)}`;
 }
 
 function usageLabelText(u) {
@@ -1508,8 +1508,9 @@ let lastCredits = null;
 
 function formatUsd(n) {
   if (typeof n !== "number" || !isFinite(n)) return null;
-  if (Math.abs(n) < 0.01) return `$${n.toFixed(4)}`;
-  return `$${n.toFixed(2)}`;
+  if (n === 0) return "$0.0000";
+  if (Math.abs(n) >= 1000) return `$${n.toFixed(2)}`;
+  return `$${n.toFixed(4)}`;
 }
 
 function renderCredits(info) {
