@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title data-i18n="app_title">OpenRouter 로컬 챗</title>
+<title data-i18n="app_title">Local Chat</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 <style>
   :root {
@@ -204,12 +204,42 @@
   .modal .actions .btn { width: auto; }
   #new-chat-preset { margin-top: 8px; width: 100%; background: var(--bg3); color: var(--fg);
                      border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-size: 13px; }
+
+  /* 사이드바 접기/펼치기 */
+  .side-header-top { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .side-header-top h1 { font-size: 15px; flex: 1; min-width: 0; overflow: hidden;
+                        text-overflow: ellipsis; white-space: nowrap; }
+  .sidebar-toggle { width: 28px; height: 28px; padding: 0; flex: 0 0 auto;
+                    font-size: 12px; line-height: 1; }
+  .sidebar-toggle::before { content: "◀"; }
+  #sidebar.collapsed { width: 40px; min-width: 40px; transition: width 140ms ease; }
+  #sidebar { transition: width 140ms ease; }
+  #sidebar.collapsed .side-header { padding: 8px 6px; display: flex;
+                                   flex-direction: column; align-items: center; gap: 10px; }
+  #sidebar.collapsed .side-header-top { width: 100%;
+                                        justify-content: center; margin-bottom: 0; gap: 0; }
+  #sidebar.collapsed .side-header-top h1,
+  #sidebar.collapsed #new-chat-preset,
+  #sidebar.collapsed #conv-list,
+  #sidebar.collapsed .side-footer { display: none; }
+  #sidebar.collapsed .sidebar-toggle::before { content: "▶"; }
+  #sidebar.collapsed #new-chat-btn {
+    width: 32px; height: 32px; padding: 0;
+    border-radius: 50%;
+    font-size: 18px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0;
+  }
 </style>
 </head>
 <body>
   <aside id="sidebar">
     <div class="side-header">
-      <h1 data-i18n="app_title">OpenRouter 로컬 챗</h1>
+      <div class="side-header-top">
+        <button class="icon-btn sidebar-toggle" id="sidebar-toggle-btn"
+                data-i18n-title="sidebar_collapse" title="사이드바 접기"></button>
+        <h1 data-i18n="app_title">Local Chat</h1>
+      </div>
       <button class="btn" id="new-chat-btn" data-i18n="new_chat">+ 새 대화</button>
       <select id="new-chat-preset" data-i18n-title="preset_for_new"></select>
     </div>
@@ -332,7 +362,7 @@ let currentLang = localStorage.getItem("lang") || "ko";
 
 const I18N = {
   ko: {
-    app_title: "OpenRouter 로컬 챗",
+    app_title: "Local Chat",
     new_chat: "+ 새 대화",
     preset_for_new: "새 대화에 적용할 프리셋",
     manage_presets: "프리셋 관리",
@@ -399,9 +429,11 @@ const I18N = {
     img_alt: "이미지",
     thinking: "생각 중…",
     think_done: "사고 과정",
+    sidebar_collapse: "사이드바 접기",
+    sidebar_expand: "사이드바 펼치기",
   },
   fr: {
-    app_title: "Chat local OpenRouter",
+    app_title: "Local Chat",
     new_chat: "+ Nouvelle conversation",
     preset_for_new: "Préréglage à appliquer aux nouvelles conversations",
     manage_presets: "Gérer les préréglages",
@@ -468,6 +500,8 @@ const I18N = {
     img_alt: "Image",
     thinking: "Réflexion en cours…",
     think_done: "Processus de réflexion",
+    sidebar_collapse: "Réduire la barre latérale",
+    sidebar_expand: "Afficher la barre latérale",
   },
 };
 
@@ -487,6 +521,16 @@ function applyLang() {
   renderConvList();
   renderPresetOptions();
   renderMessages();
+  // 사이드바 토글 버튼의 title은 data-i18n-title이 고정값이라 접힘 상태에 따라 갱신
+  const sb = document.getElementById("sidebar");
+  if (sb) {
+    const btn = document.getElementById("sidebar-toggle-btn");
+    if (btn) btn.title = t(sb.classList.contains("collapsed") ? "sidebar_expand" : "sidebar_collapse");
+    // 새 대화 버튼 텍스트도 접힘 상태에 맞춰 일관성 유지
+    if (typeof applySidebarState === "function") {
+      applySidebarState(sb.classList.contains("collapsed"));
+    }
+  }
 }
 
 $("lang-select").value = currentLang;
@@ -1218,6 +1262,24 @@ function autoGrow() {
 
 // ---------- 이벤트 바인딩 ----------
 $("new-chat-btn").onclick = createConversation;
+// 사이드바 접기/펼치기 토글
+const sidebarEl = $("sidebar");
+const sidebarToggleBtn = $("sidebar-toggle-btn");
+const newChatBtn = $("new-chat-btn");
+const SIDEBAR_COLLAPSED_KEY = "sidebar_collapsed";
+function applySidebarState(collapsed) {
+  sidebarEl.classList.toggle("collapsed", collapsed);
+  sidebarToggleBtn.title = t(collapsed ? "sidebar_expand" : "sidebar_collapse");
+  // 접힘 상태에서는 원형 + 기호만, 펼침 상태에서는 원래 i18n 텍스트로 복원
+  newChatBtn.textContent = collapsed ? "+" : t("new_chat");
+}
+sidebarToggleBtn.onclick = () => {
+  const next = !sidebarEl.classList.contains("collapsed");
+  applySidebarState(next);
+  localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+};
+// 초기 상태 복원 (applyLang이 i18n을 적용한 이후에 두면 title도 올바르게 잡힘)
+applySidebarState(localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1");
 sendBtn.onclick = () => sendMessage(false);
 inputEl.addEventListener("input", autoGrow);
 inputEl.addEventListener("keydown", (e) => {
