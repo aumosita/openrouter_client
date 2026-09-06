@@ -393,6 +393,9 @@ async def chat(body: ChatRequest):
             try:
                 yield sse("status", {"stage": "detecting"})
                 source_lang, english_query = await openrouter.detect_and_translate_to_english(body.message)
+                yield sse("lang", source_lang)
+                if english_query != body.message:
+                    yield sse("query", english_query)
                 if source_lang not in ("en", "english", "unknown"):
                     yield sse("status", {"stage": "translating"})
                 yield sse("status", {"stage": "searching"})
@@ -408,8 +411,10 @@ async def chat(body: ChatRequest):
                 ):
                     if kind == "token":
                         full_text += data
+                        # 영어 원문 답변을 로그용으로 실시간 스트리밍
+                        yield sse("en_token", data)
                         if source_lang in ("en", "english", "unknown"):
-                            # 원문이 영어면 영어 답변을 그대로 스트리밍
+                            # 원문이 영어면 영어 답변을 그대로 최종 답변으로 스트리밍
                             yield sse("token", data)
                     elif kind == "reasoning":
                         full_reasoning += data

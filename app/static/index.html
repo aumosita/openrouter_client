@@ -63,6 +63,19 @@
   .es-status { margin: 0 0 8px; padding: 6px 10px; border: 1px solid var(--border);
                border-left: 3px solid #2f9e6e; border-radius: 6px; background: var(--bg2);
                color: var(--fg-dim); font-size: 12px; }
+  /* 강화 검색 진행 로그(thinking 스타일) */
+  .es-log { margin: 0 0 8px; border: 1px solid var(--border); border-radius: 6px;
+            background: var(--bg2); font-size: 12px; max-width: 720px; }
+  .es-log summary { cursor: pointer; padding: 6px 10px; color: #2f9e6e; user-select: none;
+                    list-style: none; font-weight: 600; }
+  .es-log summary::-webkit-details-marker { display: none; }
+  .es-log summary::before { content: "▸ "; }
+  .es-log[open] summary::before { content: "▾ "; }
+  .es-log .es-body { padding: 4px 10px 8px; border-top: 1px solid var(--border); color: var(--fg-dim); }
+  .es-log .es-row { padding: 2px 0; word-break: break-word; white-space: pre-wrap; }
+  .es-log .es-row .es-label { color: #2f9e6e; margin-right: 4px; }
+  .es-log .es-en { margin-top: 4px; padding: 6px 8px; background: var(--bg3); border-radius: 4px;
+                    color: var(--fg); white-space: pre-wrap; max-height: 240px; overflow-y: auto; }
   #sidebar.collapsed #enhanced-toggle {
     width: 32px; height: 32px; padding: 0;
     border-radius: 50%;
@@ -456,6 +469,11 @@ const I18N = {
     es_searching: "웹 검색 중…",
     es_answering: "답변 생성 중…",
     es_translating_back: "결과를 원문 언어로 번역 중…",
+    es_log_title: "강화 검색 진행 과정",
+    es_log_lang: "언어 감지",
+    es_log_query: "영어 질문",
+    es_log_en_answer: "영어 답변 (원문)",
+    es_log_skipped: "입력이 영어 — 번역 생략",
   },
   fr: {
     app_title: "Local Chat",
@@ -534,6 +552,11 @@ const I18N = {
     es_searching: "Recherche web…",
     es_answering: "Génération de la réponse…",
     es_translating_back: "Traduction dans la langue d'origine…",
+    es_log_title: "Processus de recherche approfondie",
+    es_log_lang: "Langue détectée",
+    es_log_query: "Question en anglais",
+    es_log_en_answer: "Réponse en anglais (originale)",
+    es_log_skipped: "Saisie en anglais — traduction ignorée",
   },
 };
 
@@ -1035,12 +1058,51 @@ async function sendMessage(regenerate = false) {
   let fullText = "";
   let fullReasoning = "";
   let thinkEl = null;
-  let statusEl = null; // 강화 검색 단계 표시
+  let logEl = null;      // 강화 검색 진행 로그(<details>)
+  let logBody = null;    // 로그 본문 그릇
+  let enEl = null;       // 영어 원문 답변 영역
   const finalizeThink = () => {
     if (thinkEl) {
       thinkEl.classList.remove("streaming");
       thinkEl.querySelector("summary").textContent = t("think_done");
     }
+  };
+  const ensureLog = () => {
+    if (logEl) return;
+    logEl = document.createElement("details");
+    logEl.className = "es-log";
+    logEl.open = true;
+    logEl.innerHTML = "<summary>" + t("es_log_title") + "</summary>";
+    logBody = document.createElement("div");
+    logBody.className = "es-body";
+    logEl.appendChild(logBody);
+    assistantEl.prepend(logEl);
+  };
+  const logRow = (label, text) => {
+    ensureLog();
+    const row = document.createElement("div");
+    row.className = "es-row";
+    row.innerHTML = `<span class="es-label"></span>`;
+    row.querySelector(".es-label").textContent = label;
+    const content = document.createElement("span");
+    content.className = "es-text";
+    content.textContent = text || "";
+    row.appendChild(content);
+    logBody.appendChild(row);
+    return row;
+  };
+  const ensureEnEl = () => {
+    ensureLog();
+    if (enEl) return enEl;
+    const row = document.createElement("div");
+    row.className = "es-row";
+    row.innerHTML = `<span class="es-label">${t("es_log_en_answer")}</span>`;
+    enEl = document.createElement("div");
+    enEl.className = "es-en";
+    enEl.textContent = "";
+    row.appendChild(enEl);
+    logBody.appendChild(row);
+    return enEl;
   };
   try {
     const resp = await fetch("/api/chat", {
@@ -1083,15 +1145,13 @@ async function sendMessage(regenerate = false) {
         if (event === "token") {
           fullText += payload;
           finalizeThink();
-          if (thinkEl) {
-            // 사고 블록을 보존한 채 innerHTML을 교체하고, 사고 블록을 다시 맨 앞에 삽입
-            const next = renderMarkdown(fullText);
-            assistantEl.innerHTML = next;
-            assistantEl.prepend(thinkEl);
-          } else {
-            assistantEl.innerHTML = renderMarkdown(fullText);
-          }
-          statusEl = null; // 토큰 렌더가 단계 표시를 대체
+          // 로그/사고 블록을 보존한 채 답변 영역을 갱신
+          const preserved = [];
+          if (logEl) preserved.push(logEl);
+          if (thinkEl) preserved.push(thinkEl);
+          const next = renderMarkdown(fullText);
+          assistantEl.innerHTML = next;
+          for (const el of preserved) assistantEl.prepend(el);
           scrollToBottom();
         } else if (event === "status") {
           const stageMap = {
@@ -1101,14 +1161,21 @@ async function sendMessage(regenerate = false) {
           };
           const stext = stageMap[payload.stage];
           if (stext) {
-            if (!statusEl) {
-              statusEl = document.createElement("div");
-              statusEl.className = "es-status";
-              assistantEl.appendChild(statusEl);
-            }
-            statusEl.textContent = stext;
+            logRow("·", stext);
             scrollToBottom();
           }
+        } else if (event === "lang") {
+          logRow(t("es_log_lang"), payload);
+          scrollToBottom();
+        } else if (event === "query") {
+          // 입력과 동일(영어)이 아니면 서버가 내려보내므로, 항상 표시
+          logRow(t("es_log_query") + " →", payload);
+          scrollToBottom();
+        } else if (event === "en_token") {
+          // 영어 원문 답변 실시간 표시
+          const en = ensureEnEl();
+          en.textContent += payload;
+          scrollToBottom();
         } else if (event === "reasoning") {
           if (!thinkEl) {
             thinkEl = document.createElement("details");
