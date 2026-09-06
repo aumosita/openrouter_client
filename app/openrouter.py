@@ -39,10 +39,7 @@ SEARCH_SYSTEM_PROMPT = """Rules:
 KOREAN_STYLE_PROMPT = (
     "When providing explanatory or descriptive responses in Korean, use the plain "
     "declarative ending forms (-이다/-하다) rather than the polite forms (-입니다/-합니다), "
-    "except in direct conversational contexts where addressing me personally. "
-    "Do not append unsolicited suggestions of any kind\u2014including but not limited to "
-    "offering to create short-form video scripts or proposing additional web searches\u2014"
-    "unless I explicitly request them."
+    "except in direct conversational contexts where addressing me personally."
 )
 
 
