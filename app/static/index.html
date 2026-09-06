@@ -563,6 +563,9 @@ function applyLang() {
       applySidebarState(sb.classList.contains("collapsed"));
     }
   }
+  if (typeof updateWebToggleVisibility === "function") {
+    updateWebToggleVisibility();
+  }
 }
 
 $("lang-select").value = currentLang;
@@ -1349,6 +1352,7 @@ enhancedToggle.onclick = () => {
   enhancedOn = !enhancedOn;
   localStorage.setItem(ENHANCED_KEY, enhancedOn ? "1" : "0");
   enhancedToggle.classList.toggle("on", enhancedOn);
+  updateWebToggleVisibility();
 };
 modelSelect.onchange = async () => {
   updateAttachVisibility();
@@ -1459,6 +1463,11 @@ function updateAttachVisibility() {
   if (!(caps && caps.input_image)) clearPendingImages();
 }
 
+// 강화 검색이 켜져 있으면 웹 검색 토글을 숨김 (무조건 검색 수행), 꺼져 있으면 표시
+function updateWebToggleVisibility() {
+  webToggle.style.display = enhancedOn ? "none" : "";
+}
+
 function fileToDataUri(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1523,6 +1532,7 @@ inputEl.addEventListener("paste", async (e) => {
 (async function init() {
   applyLang();
   enhancedToggle.classList.toggle("on", enhancedOn);
+  updateWebToggleVisibility();
   try {
     const cfg = await api("/api/config");
     await loadModels();
