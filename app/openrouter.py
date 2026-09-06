@@ -35,6 +35,16 @@ SEARCH_SYSTEM_PROMPT = """Rules:
 2. Verify via web search - Don't rely solely on training data; actively search the internet to confirm accuracy.
 3. Multilingual search - When a topic is country-specific (e.g., Korea), search in both the local language (e.g., Korean) and English to get the most accurate and comprehensive results."""
 
+# 한국어 역번역 시 적용할 문체 지침 (번역 지시에 별도 문단으로 추가됨)
+KOREAN_STYLE_PROMPT = (
+    "When providing explanatory or descriptive responses in Korean, use the plain "
+    "declarative ending forms (-이다/-하다) rather than the polite forms (-입니다/-합니다), "
+    "except in direct conversational contexts where addressing me personally. "
+    "Do not append unsolicited suggestions of any kind\u2014including but not limited to "
+    "offering to create short-form video scripts or proposing additional web searches\u2014"
+    "unless I explicitly request them."
+)
+
 
 async def complete(messages: list, model: str) -> str:
     """비스트리밍 단일 완성 호출. content 문자열을 반환."""
@@ -111,21 +121,25 @@ async def detect_and_translate_to_english(text: str) -> tuple[str, str]:
 async def translate_back(text: str, source_lang: str) -> str:
     """영어 답변을 원문 언어로 역번역. URL/출처 링크는 그대로 유지.
 
+    한국어(ko/kor) 대상이면 번역 지시에 문체 지침을 별도 문단으로 추가.
     영어이거나 언어를 알 수 없으면 원문 그대로 반환.
     """
     if source_lang in ("en", "english", "unknown"):
         return text
     if not text.strip():
         return text
+    system = (
+        f"You are a translation assistant. Translate the following English text "
+        f"into {source_lang} for the user. Keep all source URLs, links, and citation "
+        "references unchanged and intact. Output only the translation."
+    )
+    if source_lang in ("ko", "kor"):
+        system += "\n\n" + KOREAN_STYLE_PROMPT
     return await complete(
         [
             {
                 "role": "system",
-                "content": (
-                    f"You are a translation assistant. Translate the following English text "
-                    f"into {source_lang} for the user. Keep all source URLs, links, and citation "
-                    "references unchanged and intact. Output only the translation."
-                ),
+                "content": system,
             },
             {"role": "user", "content": text},
         ],
