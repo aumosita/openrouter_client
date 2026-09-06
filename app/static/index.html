@@ -56,6 +56,20 @@
   .conv-item .pin:hover { color: var(--accent); }
   .btn.danger { background: var(--danger); }
   .btn.danger:hover { background: #c04848; }
+  /* 강화 검색 버튼 (새 대화 아래, 다른 색) */
+  .btn.enhanced { background: #1f7a55; margin-top: 8px; }
+  .btn.enhanced:hover { background: #176747; }
+  .btn.enhanced.on { background: #23916a; outline: 2px solid rgba(52, 196, 138, 0.4); }
+  .es-status { margin: 0 0 8px; padding: 6px 10px; border: 1px solid var(--border);
+               border-left: 3px solid #2f9e6e; border-radius: 6px; background: var(--bg2);
+               color: var(--fg-dim); font-size: 12px; }
+  #sidebar.collapsed #enhanced-toggle {
+    width: 32px; height: 32px; padding: 0;
+    border-radius: 50%;
+    font-size: 16px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0;
+  }
   #sidebar .side-footer { padding: 10px; border-top: 1px solid var(--border); }
 
   /* 메인 */
@@ -241,6 +255,7 @@
         <h1 data-i18n="app_title">Local Chat</h1>
       </div>
       <button class="btn" id="new-chat-btn" data-i18n="new_chat">+ 새 대화</button>
+      <button class="btn enhanced" id="enhanced-toggle" data-i18n="enhanced_search" data-i18n-title="enhanced_search_tip">강화 검색</button>
       <select id="new-chat-preset" data-i18n-title="preset_for_new"></select>
     </div>
     <div id="conv-list"></div>
@@ -346,6 +361,8 @@ let conversations = [];
 let presets = [];
 let currentConvId = null;
 let webSearchOn = true; // 기본 켜짐
+const ENHANCED_KEY = "enhancedOn";
+let enhancedOn = localStorage.getItem(ENHANCED_KEY) !== "0"; // 검색 기능이라 기본 ON
 let sending = false;
 let editingPresetId = null; // null이면 새 프리셋
 let modelCaps = {};        // 모델 ID별 이미지 입출력 지원 여부
@@ -356,6 +373,7 @@ const $ = (id) => document.getElementById(id);
 const convListEl = $("conv-list"), messagesEl = $("messages"), inputEl = $("input");
 const sendBtn = $("send-btn"), modelSelect = $("model-select");
 const webToggle = $("web-toggle"), presetBadge = $("preset-badge");
+const enhancedToggle = $("enhanced-toggle");
 
 // ---------- 다국어 (i18n) ----------
 let currentLang = localStorage.getItem("lang") || "ko";
@@ -431,6 +449,13 @@ const I18N = {
     think_done: "사고 과정",
     sidebar_collapse: "사이드바 접기",
     sidebar_expand: "사이드바 펼치기",
+    enhanced_search: "강화 검색",
+    enhanced_search_tip: "검색 전 영어로 번역 → 웹 검색 → 결과를 원문 언어로 표시 (크레딧 추가 차감)",
+    es_detecting: "언어 감지 중…",
+    es_translating: "영어로 번역 중…",
+    es_searching: "웹 검색 중…",
+    es_answering: "답변 생성 중…",
+    es_translating_back: "결과를 원문 언어로 번역 중…",
   },
   fr: {
     app_title: "Local Chat",
@@ -502,6 +527,13 @@ const I18N = {
     think_done: "Processus de réflexion",
     sidebar_collapse: "Réduire la barre latérale",
     sidebar_expand: "Afficher la barre latérale",
+    enhanced_search: "Recherche approfondie",
+    enhanced_search_tip: "Traduit en anglais, recherche web, puis réaffiche dans la langue d'origine (crédits supplémentaires)",
+    es_detecting: "Détection de la langue…",
+    es_translating: "Traduction en anglais…",
+    es_searching: "Recherche web…",
+    es_answering: "Génération de la réponse…",
+    es_translating_back: "Traduction dans la langue d'origine…",
   },
 };
 
@@ -1000,6 +1032,7 @@ async function sendMessage(regenerate = false) {
   let fullText = "";
   let fullReasoning = "";
   let thinkEl = null;
+  let statusEl = null; // 강화 검색 단계 표시
   const finalizeThink = () => {
     if (thinkEl) {
       thinkEl.classList.remove("streaming");
@@ -1015,6 +1048,7 @@ async function sendMessage(regenerate = false) {
         message: typeof userContent === "string" ? userContent : (userContent?.find((p) => p.type === "text")?.text ?? ""),
         model: modelSelect.value,
         web_search: webSearchOn,
+        enhanced: enhancedOn && !regenerate && !(Array.isArray(userContent) && userContent.some((p) => p && p.type === "image")),
         regenerate_last: regenerate,
         modalities,
       }),
@@ -1054,7 +1088,24 @@ async function sendMessage(regenerate = false) {
           } else {
             assistantEl.innerHTML = renderMarkdown(fullText);
           }
+          statusEl = null; // 토큰 렌더가 단계 표시를 대체
           scrollToBottom();
+        } else if (event === "status") {
+          const stageMap = {
+            detecting: t("es_detecting"), translating: t("es_translating"),
+            searching: t("es_searching"), answering: t("es_answering"),
+            translating_back: t("es_translating_back"),
+          };
+          const stext = stageMap[payload.stage];
+          if (stext) {
+            if (!statusEl) {
+              statusEl = document.createElement("div");
+              statusEl.className = "es-status";
+              assistantEl.appendChild(statusEl);
+            }
+            statusEl.textContent = stext;
+            scrollToBottom();
+          }
         } else if (event === "reasoning") {
           if (!thinkEl) {
             thinkEl = document.createElement("details");
@@ -1272,6 +1323,8 @@ function applySidebarState(collapsed) {
   sidebarToggleBtn.title = t(collapsed ? "sidebar_expand" : "sidebar_collapse");
   // 접힘 상태에서는 원형 + 기호만, 펼침 상태에서는 원래 i18n 텍스트로 복원
   newChatBtn.textContent = collapsed ? "+" : t("new_chat");
+  enhancedToggle.textContent = collapsed ? "🔍" : t("enhanced_search");
+  enhancedToggle.title = t("enhanced_search_tip");
 }
 sidebarToggleBtn.onclick = () => {
   const next = !sidebarEl.classList.contains("collapsed");
@@ -1291,6 +1344,11 @@ inputEl.addEventListener("keydown", (e) => {
 webToggle.onclick = () => {
   webSearchOn = !webSearchOn;
   webToggle.classList.toggle("on", webSearchOn);
+};
+enhancedToggle.onclick = () => {
+  enhancedOn = !enhancedOn;
+  localStorage.setItem(ENHANCED_KEY, enhancedOn ? "1" : "0");
+  enhancedToggle.classList.toggle("on", enhancedOn);
 };
 modelSelect.onchange = async () => {
   updateAttachVisibility();
@@ -1464,6 +1522,7 @@ inputEl.addEventListener("paste", async (e) => {
 // ---------- 초기화 ----------
 (async function init() {
   applyLang();
+  enhancedToggle.classList.toggle("on", enhancedOn);
   try {
     const cfg = await api("/api/config");
     await loadModels();

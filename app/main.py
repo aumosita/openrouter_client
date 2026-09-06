@@ -52,6 +52,7 @@ class ChatRequest(BaseModel):
     web_search: bool = False
     regenerate_last: bool = False
     modalities: list[str] | None = None
+    enhanced: bool = False
 
 
 class VariantSelect(BaseModel):
@@ -354,6 +355,94 @@ async def chat(body: ChatRequest):
         def sse(event: str, data) -> str:
             return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
+        def save_assistant() -> None:
+            """스트림 완료 후 생성된 답변을 대화에 저장."""
+            if image_urls:
+                content: str | list = [{"type": "text", "text": full_text}]
+                content += [{"type": "image", "url": u} for u in image_urls]
+            else:
+                content = full_text
+
+            if body.regenerate_last:
+                storage.replace_last_assistant_message(
+                    body.conversation_id, content, annotations, model,
+                    reasoning=full_reasoning or None,
+                    usage=last_usage,
+                )
+            else:
+                assistant_msg = {"role": "assistant", "content": content, "model": model}
+                if annotations:
+                    assistant_msg["annotations"] = annotations
+                if full_reasoning:
+                    assistant_msg["reasoning"] = full_reasoning
+                if last_usage:
+                    assistant_msg["usage"] = last_usage
+                storage.append_messages(
+                    body.conversation_id,
+                    [
+                        {"role": "user", "content": body.message},
+                        assistant_msg,
+                    ],
+                )
+
+        def emit_done():
+            return sse("done", {"title": storage.get_conversation(body.conversation_id)["title"]})
+
+        # ---------- 강화 검색: 감지 → 영어 번역 → 검색+답변 → 역번역 ----------
+        if body.enhanced and not body.regenerate_last:
+            try:
+                yield sse("status", {"stage": "detecting"})
+                source_lang, english_query = await openrouter.detect_and_translate_to_english(body.message)
+                if source_lang not in ("en", "english", "unknown"):
+                    yield sse("status", {"stage": "translating"})
+                yield sse("status", {"stage": "searching"})
+
+                search_messages = [
+                    {"role": "system", "content": openrouter.SEARCH_SYSTEM_PROMPT},
+                    {"role": "user", "content": english_query},
+                ]
+
+                # 영어로 검색 + 답변 생성 (웹 검색 플러그인 항상 사용)
+                async for kind, data in openrouter.stream_chat(
+                    search_messages, model, True, body.modalities
+                ):
+                    if kind == "token":
+                        full_text += data
+                        if source_lang in ("en", "english", "unknown"):
+                            # 원문이 영어면 영어 답변을 그대로 스트리밍
+                            yield sse("token", data)
+                    elif kind == "reasoning":
+                        full_reasoning += data
+                    elif kind == "image_data":
+                        url = images.save_data_uri(data)
+                        if url:
+                            image_urls.append(url)
+                            yield sse("image", url)
+                    elif kind == "annotations":
+                        annotations = data
+                    elif kind == "usage":
+                        last_usage = data
+                    elif kind == "error":
+                        yield sse("error", data)
+                        return
+
+                # 영어가 아닌 경우: 최종 답변을 역번역해 한 번에 스트리밍
+                if source_lang not in ("en", "english", "unknown"):
+                    if english_query != body.message:
+                        yield sse("status", {"stage": "answering"})
+                    if full_text.strip():
+                        yield sse("status", {"stage": "translating_back"})
+                        full_text = await openrouter.translate_back(full_text, source_lang)
+                        yield sse("token", full_text)
+            except openrouter.OpenRouterError as e:
+                yield sse("error", str(e))
+                return
+
+            save_assistant()
+            yield emit_done()
+            return
+
+        # ---------- 기존 일반 경로 ----------
         async for kind, data in openrouter.stream_chat(
             messages, model, body.web_search, body.modalities
         ):
@@ -378,34 +467,7 @@ async def chat(body: ChatRequest):
                 yield sse("error", data)
                 return
 
-        # 스트림 완료 후 대화에 저장 (이미지가 있으면 content를 배열로 구성)
-        if image_urls:
-            assistant_content: str | list = [{"type": "text", "text": full_text}]
-            assistant_content += [{"type": "image", "url": u} for u in image_urls]
-        else:
-            assistant_content = full_text
-
-        if body.regenerate_last:
-            storage.replace_last_assistant_message(
-                body.conversation_id, assistant_content, annotations, model,
-                reasoning=full_reasoning or None,
-                usage=last_usage,
-            )
-        else:
-            assistant_msg = {"role": "assistant", "content": assistant_content, "model": model}
-            if annotations:
-                assistant_msg["annotations"] = annotations
-            if full_reasoning:
-                assistant_msg["reasoning"] = full_reasoning
-            if last_usage:
-                assistant_msg["usage"] = last_usage
-            storage.append_messages(
-                body.conversation_id,
-                [
-                    {"role": "user", "content": body.message},
-                    assistant_msg,
-                ],
-            )
-        yield sse("done", {"title": storage.get_conversation(body.conversation_id)["title"]})
+        save_assistant()
+        yield emit_done()
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
