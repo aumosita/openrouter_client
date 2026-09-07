@@ -419,10 +419,10 @@ async def chat(body: ChatRequest):
 
                 search_messages = [{"role": "system", "content": openrouter.SEARCH_SYSTEM_PROMPT}]
                 search_messages.extend(english_history)
-                # 영어로 검색 + 답변 생성 (웹 검색 토글 상태를 따른다 — 끄면 검색 없이 생성만 수행)
+                # 영어로 검색 + 답변 생성 (웹 검색 플러그인 항상 사용)
                 search_messages.append({"role": "user", "content": english_query})
                 async for kind, data in openrouter.stream_chat(
-                    search_messages, model, body.web_search, body.modalities
+                    search_messages, model, True, body.modalities
                 ):
                     if kind == "token":
                         full_text += data

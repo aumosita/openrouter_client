@@ -195,12 +195,6 @@
 
   #input-area { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--bg2);
                 display: flex; flex-direction: column; gap: 8px; }
-  .toggle-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .enhanced-badge { display: none; font-size: 12px; font-weight: 600; color: #2f9e6e;
-                    background: rgba(47, 158, 110, 0.12); border: 1px solid #2f9e6e;
-                    border-radius: 12px; padding: 3px 10px; cursor: default;
-                    box-shadow: 0 0 0 1px rgba(47, 158, 110, 0.2); }
-  .enhanced-badge.on { display: inline-block; }
   #input-row { display: flex; gap: 8px; align-items: flex-end; width: 100%; }
   #input { flex: 1; background: var(--bg3); color: var(--fg); border: 1px solid var(--border);
            border-radius: 8px; padding: 10px 12px; font-size: 14px; font-family: inherit;
@@ -296,11 +290,8 @@
     </div>
     <div id="messages"><div id="empty-hint" data-i18n-html="empty_hint">왼쪽에서 대화를 선택하거나<br>새 대화를 시작하세요.</div></div>
     <div id="input-area">
-      <div class="toggle-bar">
-        <div class="toggle on" id="web-toggle" data-i18n-title="web_search_tip">
-          <div class="pill"></div><span data-i18n="web_search">웹 검색</span>
-        </div>
-        <span class="enhanced-badge" id="enhanced-badge" data-i18n="es_badge_on" title="강화 검색 보기"></span>
+      <div class="toggle on" id="web-toggle" data-i18n-title="web_search_tip">
+        <div class="pill"></div><span data-i18n="web_search">웹 검색</span>
       </div>
       <div id="input-row">
         <button class="icon-btn" id="attach-btn" data-i18n-title="attach_image" style="display:none">📎</button>
@@ -474,7 +465,6 @@ const I18N = {
     sidebar_expand: "사이드바 펼치기",
     enhanced_search: "강화 검색",
     enhanced_search_tip: "검색 전 영어로 번역 → 웹 검색 → 결과를 원문 언어로 표시 (크레딧 추가 차감)",
-    es_badge_on: "🔍 강화 검색",
     es_detecting: "언어 감지 중…",
     es_translating: "영어로 번역 중…",
     es_searching: "웹 검색 중…",
@@ -559,7 +549,6 @@ const I18N = {
     sidebar_expand: "Afficher la barre latérale",
     enhanced_search: "Recherche approfondie",
     enhanced_search_tip: "Traduit en anglais, recherche web, puis réaffiche dans la langue d'origine (crédits supplémentaires)",
-    es_badge_on: "🔍 Recherche approfondie",
     es_detecting: "Détection de la langue…",
     es_translating: "Traduction en anglais…",
     es_searching: "Recherche web…",
@@ -1459,7 +1448,6 @@ enhancedToggle.onclick = () => {
   localStorage.setItem(ENHANCED_KEY, enhancedOn ? "1" : "0");
   enhancedToggle.classList.toggle("on", enhancedOn);
   updateWebToggleVisibility();
-  updateEnhancedBadge();
 };
 modelSelect.onchange = async () => {
   updateAttachVisibility();
@@ -1570,18 +1558,9 @@ function updateAttachVisibility() {
   if (!(caps && caps.input_image)) clearPendingImages();
 }
 
-// 강화 검색 토글과 무관하게 웹 검색 토글은 항상 표시 (강화 검색 중에도 웹 검색 on/off 제어 가능).
-// 하위호환을 위해 함수는 유지하되 표시만 보장.
+// 강화 검색이 켜져 있으면 웹 검색 토글을 숨김 (무조건 검색 수행), 꺼져 있으면 표시
 function updateWebToggleVisibility() {
-  webToggle.style.display = "";
-}
-
-// 강화 검색이 켜져 있으면 입력창 부근에 배지 표시
-function updateEnhancedBadge() {
-  const badge = $("enhanced-badge");
-  if (!badge) return;
-  badge.classList.toggle("on", enhancedOn);
-  badge.textContent = t("es_badge_on");
+  webToggle.style.display = enhancedOn ? "none" : "";
 }
 
 function fileToDataUri(file) {
@@ -1649,7 +1628,6 @@ inputEl.addEventListener("paste", async (e) => {
   applyLang();
   enhancedToggle.classList.toggle("on", enhancedOn);
   updateWebToggleVisibility();
-  updateEnhancedBadge();
   try {
     const cfg = await api("/api/config");
     await loadModels();
