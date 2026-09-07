@@ -434,6 +434,7 @@ const I18N = {
     no_preset: "프리셋 없음",
     copy: "복사",
     copied: "복사됨",
+    copy_failed: "복사 실패",
     regen: "재답변",
     regen_tip: "다시 답변 생성",
     copy_tip: "복사",
@@ -517,6 +518,7 @@ const I18N = {
     no_preset: "Aucun préréglage",
     copy: "Copier",
     copied: "Copié !",
+    copy_failed: "Échec de la copie",
     regen: "Régénérer",
     regen_tip: "Générer à nouveau la réponse",
     copy_tip: "Copier",
@@ -902,13 +904,39 @@ function appendMessageEl(m, isLastAssistant = false) {
 }
 
 // 클립보드 복사 공통 처리
+// navigator.clipboard API는 HTTPS 또는 localhost가 아니면 실패함 → fallback 방식 병행
 function copyText(text, btn) {
-  navigator.clipboard.writeText(text).then(() => {
+  const flash = (ok) => {
     if (!btn) return;
     const orig = btn.textContent;
-    btn.textContent = t("copied");
-    setTimeout(() => { btn.textContent = orig; }, 1200);
-  }).catch(() => {});
+    btn.textContent = ok ? t("copied") : t("copy_failed");
+    setTimeout(() => { btn.textContent = orig; }, 1400);
+  };
+  const fallback = () => {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      ta.style.top = "0";
+      ta.setAttribute("readonly", "");
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      if (ok) { flash(true); return true; }
+      flash(false);
+      return false;
+    } catch (e) {
+      flash(false);
+      return false;
+    }
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => flash(true)).catch(() => fallback());
+  } else {
+    fallback();
+  }
 }
 
 function scrollToBottom() {
