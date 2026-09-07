@@ -117,6 +117,11 @@ def _init_db(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE messages ADD COLUMN reasoning TEXT")
     if "usage" not in msg_cols:
         conn.execute("ALTER TABLE messages ADD COLUMN usage TEXT")
+    # 강화 검색 히스토리 영속화: 영어 번역 질문 + 영어(원문) 응답
+    if "english_query" not in msg_cols:
+        conn.execute("ALTER TABLE messages ADD COLUMN english_query TEXT")
+    if "english_response" not in msg_cols:
+        conn.execute("ALTER TABLE messages ADD COLUMN english_response TEXT")
 
 
 def _migrate_json_if_needed(conn: sqlite3.Connection) -> None:
@@ -230,7 +235,8 @@ def _usage_aggregate_sql(conv_ids: list[str]) -> tuple[str, list]:
 def _get_messages(conn: sqlite3.Connection, conv_id: str) -> list:
     msgs = []
     for r in conn.execute(
-        "SELECT seq, role, content, annotations, variants, active, variant_models, reasoning, usage "
+        "SELECT seq, role, content, annotations, variants, active, variant_models, "
+        "reasoning, usage, english_query, english_response "
         "FROM messages WHERE conversation_id = ? ORDER BY seq",
         (conv_id,),
     ):
@@ -273,6 +279,11 @@ def _get_messages(conn: sqlite3.Connection, conv_id: str) -> list:
                     msg["usage"] = {"cost": usage["cost"]}
             except json.JSONDecodeError:
                 pass
+        # 강화 검색 영어 히스토리 (번역 질문 + 영어 응답)
+        if r["english_query"]:
+            msg["english_query"] = r["english_query"]
+        if r["english_response"]:
+            msg["english_response"] = r["english_response"]
         msgs.append(msg)
     return msgs
 
@@ -647,8 +658,9 @@ def append_messages(conv_id: str, messages: list) -> None:
                 )
                 conn.execute(
                     "INSERT INTO messages (conversation_id, role, content, annotations, "
-                    "variants, active, variant_models, reasoning, usage) "
-                    "VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)",
+                    "variants, active, variant_models, reasoning, usage, "
+                    "english_query, english_response) "
+                    "VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)",
                     (conv_id, m["role"], stored_content,
                      json.dumps(m.get("annotations"), ensure_ascii=False)
                      if m.get("annotations") is not None else None,
@@ -660,7 +672,10 @@ def append_messages(conv_id: str, messages: list) -> None:
                      if is_assistant and m.get("model") else None,
                      m.get("reasoning") if is_assistant else None,
                      json.dumps(m.get("usage"), ensure_ascii=False)
-                     if is_assistant and m.get("usage") else None),
+                     if is_assistant and m.get("usage") else None,
+                     # 강화 검색: 영어 번역 질문 / 영어(원문) 응답
+                     m.get("english_query") if not is_assistant else None,
+                     m.get("english_response") if is_assistant else None),
                 )
             # 첫 사용자 메시지로 제목 자동 설정
             title_row = conn.execute(

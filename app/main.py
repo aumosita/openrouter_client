@@ -19,6 +19,9 @@ BASE_SYSTEM_PROMPT = os.environ.get("BASE_SYSTEM_PROMPT", "")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 DEFAULT_PORT = int(os.environ.get("PORT", "8004"))
 
+# 강화 검색: 검색 모델에 전달할 영어 히스토리 최대 메시지 수 (user+assistant 한 쌍 = 2개, 즉 20턴)
+ENHANCED_HISTORY_LIMIT = 40
+
 app = FastAPI(title="OpenRouter 로컬 챗")
 
 
@@ -351,6 +354,8 @@ async def chat(body: ChatRequest):
         image_urls: list[str] = []
         full_reasoning = ""
         last_usage: dict | None = None
+        # 강화 검색: 현재 턴의 영어 번역 질문/영어 응답 (DB 영속화용)
+        english_info: dict | None = None
 
         def sse(event: str, data) -> str:
             return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -370,7 +375,12 @@ async def chat(body: ChatRequest):
                     usage=last_usage,
                 )
             else:
+                user_msg = {"role": "user", "content": body.message}
                 assistant_msg = {"role": "assistant", "content": content, "model": model}
+                if english_info and english_info.get("english_query"):
+                    user_msg["english_query"] = english_info["english_query"]
+                if english_info and english_info.get("english_response"):
+                    assistant_msg["english_response"] = english_info["english_response"]
                 if annotations:
                     assistant_msg["annotations"] = annotations
                 if full_reasoning:
@@ -379,10 +389,7 @@ async def chat(body: ChatRequest):
                     assistant_msg["usage"] = last_usage
                 storage.append_messages(
                     body.conversation_id,
-                    [
-                        {"role": "user", "content": body.message},
-                        assistant_msg,
-                    ],
+                    [user_msg, assistant_msg],
                 )
 
         def emit_done():
@@ -400,12 +407,20 @@ async def chat(body: ChatRequest):
                     yield sse("status", {"stage": "translating"})
                 yield sse("status", {"stage": "searching"})
 
-                search_messages = [
-                    {"role": "system", "content": openrouter.SEARCH_SYSTEM_PROMPT},
-                    {"role": "user", "content": english_query},
-                ]
+                # 영어 전용 히스토리 구성: DB에 영속화된 영어 번역 질문/영어 응답 쌍을
+                # 저장 순서대로 추출 (최근 ENHANCED_HISTORY_LIMIT개 메시지, 즉 20턴만 사용).
+                english_history: list[dict] = []
+                for _m in conv["messages"]:
+                    if _m.get("english_query"):
+                        english_history.append({"role": "user", "content": _m["english_query"]})
+                    if _m.get("english_response"):
+                        english_history.append({"role": "assistant", "content": _m["english_response"]})
+                english_history = english_history[-ENHANCED_HISTORY_LIMIT:]
 
+                search_messages = [{"role": "system", "content": openrouter.SEARCH_SYSTEM_PROMPT}]
+                search_messages.extend(english_history)
                 # 영어로 검색 + 답변 생성 (웹 검색 플러그인 항상 사용)
+                search_messages.append({"role": "user", "content": english_query})
                 async for kind, data in openrouter.stream_chat(
                     search_messages, model, True, body.modalities
                 ):
@@ -430,6 +445,12 @@ async def chat(body: ChatRequest):
                     elif kind == "error":
                         yield sse("error", data)
                         return
+
+                # 영어 원문 응답을 영속화용으로 백업 (역번역이 full_text를 덮어쓰기 전에)
+                english_info = {
+                    "english_query": english_query,
+                    "english_response": full_text,
+                }
 
                 # 영어가 아닌 경우: 최종 답변을 역번역해 한 번에 스트리밍
                 if source_lang not in ("en", "english", "unknown"):
