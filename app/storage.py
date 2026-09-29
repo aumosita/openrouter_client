@@ -117,11 +117,25 @@ def _init_db(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE messages ADD COLUMN reasoning TEXT")
     if "usage" not in msg_cols:
         conn.execute("ALTER TABLE messages ADD COLUMN usage TEXT")
-    # 강화 검색 히스토리 영속화: 영어 번역 질문 + 영어(원문) 응답
-    if "english_query" not in msg_cols:
-        conn.execute("ALTER TABLE messages ADD COLUMN english_query TEXT")
-    if "english_response" not in msg_cols:
-        conn.execute("ALTER TABLE messages ADD COLUMN english_response TEXT")
+    # 대화별 강화 검색 설정: 검색 언어(PCT 공개어 코드) / 번역 모델
+    conv_cols = {r["name"] for r in conn.execute("PRAGMA table_info(conversations)")}
+    if "search_lang" not in conv_cols:
+        conn.execute("ALTER TABLE conversations ADD COLUMN search_lang TEXT")
+    if "translate_model" not in conv_cols:
+        conn.execute("ALTER TABLE conversations ADD COLUMN translate_model TEXT")
+    # 강화 검색 히스토리 영속화: 검색 언어 질문 + 검색 언어(원문) 응답
+    # (구버전 english_query/english_response 컬럼은 검색 언어 일반화에 따라 변경)
+    msg_cols = {r["name"] for r in conn.execute("PRAGMA table_info(messages)")}
+    if "search_query" not in msg_cols:
+        if "english_query" in msg_cols:
+            conn.execute("ALTER TABLE messages RENAME COLUMN english_query TO search_query")
+        else:
+            conn.execute("ALTER TABLE messages ADD COLUMN search_query TEXT")
+    if "search_response" not in msg_cols:
+        if "english_response" in msg_cols:
+            conn.execute("ALTER TABLE messages RENAME COLUMN english_response TO search_response")
+        else:
+            conn.execute("ALTER TABLE messages ADD COLUMN search_response TEXT")
 
 
 def _migrate_json_if_needed(conn: sqlite3.Connection) -> None:
@@ -147,7 +161,8 @@ def _migrate_json_if_needed(conn: sqlite3.Connection) -> None:
             convs = json.loads(CONVERSATIONS_FILE.read_text(encoding="utf-8"))
             for c in convs:
                 conn.execute(
-                    "INSERT INTO conversations VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO conversations (id, title, preset_id, model, pinned, "
+                    "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (c["id"], c["title"], c.get("preset_id"), c.get("model"),
                      1 if c.get("pinned") else 0, c["created_at"], c["updated_at"]),
                 )
@@ -196,6 +211,8 @@ def _row_to_conversation(row: sqlite3.Row, messages: list) -> dict:
         "title": row["title"],
         "preset_id": row["preset_id"],
         "model": row["model"],
+        "search_lang": row["search_lang"],
+        "translate_model": row["translate_model"],
         "pinned": bool(row["pinned"]),
         "messages": messages,
         "created_at": row["created_at"],
@@ -236,7 +253,7 @@ def _get_messages(conn: sqlite3.Connection, conv_id: str) -> list:
     msgs = []
     for r in conn.execute(
         "SELECT seq, role, content, annotations, variants, active, variant_models, "
-        "reasoning, usage, english_query, english_response "
+        "reasoning, usage, search_query, search_response "
         "FROM messages WHERE conversation_id = ? ORDER BY seq",
         (conv_id,),
     ):
@@ -279,11 +296,11 @@ def _get_messages(conn: sqlite3.Connection, conv_id: str) -> list:
                     msg["usage"] = {"cost": usage["cost"]}
             except json.JSONDecodeError:
                 pass
-        # 강화 검색 영어 히스토리 (번역 질문 + 영어 응답)
-        if r["english_query"]:
-            msg["english_query"] = r["english_query"]
-        if r["english_response"]:
-            msg["english_response"] = r["english_response"]
+        # 강화 검색 검색 언어 히스토리 (번역 질문 + 검색 언어 응답)
+        if r["search_query"]:
+            msg["search_query"] = r["search_query"]
+        if r["search_response"]:
+            msg["search_response"] = r["search_response"]
         msgs.append(msg)
     return msgs
 
@@ -436,13 +453,16 @@ def get_conversation(conv_id: str):
             conn.close()
 
 
-def create_conversation(title: str = "새 대화", preset_id=None, model=None) -> dict:
+def create_conversation(title: str = "새 대화", preset_id=None, model=None,
+                        search_lang=None, translate_model=None) -> dict:
     with _lock:
         conv = {
             "id": uuid.uuid4().hex[:12],
             "title": title,
             "preset_id": preset_id,
             "model": model,
+            "search_lang": search_lang,
+            "translate_model": translate_model,
             "pinned": False,
             "messages": [],
             "created_at": _now(),
@@ -451,9 +471,11 @@ def create_conversation(title: str = "새 대화", preset_id=None, model=None) -
         conn = _connect()
         try:
             conn.execute(
-                "INSERT INTO conversations VALUES (?, ?, ?, ?, 0, ?, ?)",
+                "INSERT INTO conversations (id, title, preset_id, model, pinned, "
+                "created_at, updated_at, search_lang, translate_model) "
+                "VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)",
                 (conv["id"], title, preset_id, model,
-                 conv["created_at"], conv["updated_at"]),
+                 conv["created_at"], conv["updated_at"], search_lang, translate_model),
             )
             conn.commit()
             return conv
@@ -463,11 +485,14 @@ def create_conversation(title: str = "새 대화", preset_id=None, model=None) -
 
 def update_conversation(conv_id: str, **fields):
     with _lock:
-        keys = [k for k in ("title", "preset_id", "model", "pinned") if k in fields]
+        keys = [k for k in ("title", "preset_id", "model", "search_lang",
+                            "translate_model", "pinned") if k in fields]
         if not keys:
             return get_conversation(conv_id)
         if "pinned" in fields:
             fields["pinned"] = 1 if fields["pinned"] else 0
+        if "translate_model" in fields:
+            fields["translate_model"] = (fields["translate_model"] or "").strip() or None
         sets = ", ".join(f"{k} = ?" for k in keys)
         params = [fields[k] for k in keys] + [_now(), conv_id]
         conn = _connect()
@@ -659,7 +684,7 @@ def append_messages(conv_id: str, messages: list) -> None:
                 conn.execute(
                     "INSERT INTO messages (conversation_id, role, content, annotations, "
                     "variants, active, variant_models, reasoning, usage, "
-                    "english_query, english_response) "
+                    "search_query, search_response) "
                     "VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)",
                     (conv_id, m["role"], stored_content,
                      json.dumps(m.get("annotations"), ensure_ascii=False)
@@ -673,9 +698,9 @@ def append_messages(conv_id: str, messages: list) -> None:
                      m.get("reasoning") if is_assistant else None,
                      json.dumps(m.get("usage"), ensure_ascii=False)
                      if is_assistant and m.get("usage") else None,
-                     # 강화 검색: 영어 번역 질문 / 영어(원문) 응답
-                     m.get("english_query") if not is_assistant else None,
-                     m.get("english_response") if is_assistant else None),
+                     # 강화 검색: 검색 언어 질문 / 검색 언어(원문) 응답
+                     m.get("search_query") if not is_assistant else None,
+                     m.get("search_response") if is_assistant else None),
                 )
             # 첫 사용자 메시지로 제목 자동 설정
             title_row = conn.execute(

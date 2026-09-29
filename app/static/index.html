@@ -7,9 +7,20 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 <style>
   :root {
+    color-scheme: light dark;
     --bg: #1e1f24; --bg2: #26272e; --bg3: #2f3038; --border: #3a3b44;
     --fg: #e6e6ea; --fg-dim: #9a9ba5; --accent: #6c8cff; --accent2: #5570d6;
-    --user-bg: #34558f; --danger: #e06565;
+    --user-bg: #34558f; --danger: #e06565; --danger-hover: #c04848;
+    --green: #1f7a55; --green-hover: #176747; --green-on: #23916a; --green-fg: #2f9e6e;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f5f6f8; --bg2: #ffffff; --bg3: #eef1f5; --border: #d7dce3;
+      --fg: #1d232b; --fg-dim: #5b6572;
+      --accent: #3b66e0; --accent2: #2f54c2;
+      --user-bg: #dbe8ff; --danger: #c23b3b; --danger-hover: #a93232;
+      --green: #1b8757; --green-hover: #146b45; --green-on: #1da464; --green-fg: #0f7a49;
+    }
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
@@ -55,25 +66,25 @@
   .conv-item .pin.on { color: var(--accent); }
   .conv-item .pin:hover { color: var(--accent); }
   .btn.danger { background: var(--danger); }
-  .btn.danger:hover { background: #c04848; }
+  .btn.danger:hover { background: var(--danger-hover); }
   /* 강화 검색 버튼 (새 대화 아래, 다른 색) */
-  .btn.enhanced { background: #1f7a55; margin-top: 8px; }
-  .btn.enhanced:hover { background: #176747; }
-  .btn.enhanced.on { background: #23916a; outline: 2px solid rgba(52, 196, 138, 0.4); }
+  .btn.enhanced { background: var(--green); margin-top: 8px; }
+  .btn.enhanced:hover { background: var(--green-hover); }
+  .btn.enhanced.on { background: var(--green-on); outline: 2px solid rgba(52, 196, 138, 0.4); }
   .es-status { margin: 0 0 8px; padding: 6px 10px; border: 1px solid var(--border);
-               border-left: 3px solid #2f9e6e; border-radius: 6px; background: var(--bg2);
+               border-left: 3px solid var(--green-fg); border-radius: 6px; background: var(--bg2);
                color: var(--fg-dim); font-size: 12px; }
   /* 강화 검색 진행 로그(thinking 스타일) */
   .es-log { margin: 0 0 8px; border: 1px solid var(--border); border-radius: 6px;
             background: var(--bg2); font-size: 12px; max-width: 720px; }
-  .es-log summary { cursor: pointer; padding: 6px 10px; color: #2f9e6e; user-select: none;
+  .es-log summary { cursor: pointer; padding: 6px 10px; color: var(--green-fg); user-select: none;
                     list-style: none; font-weight: 600; }
   .es-log summary::-webkit-details-marker { display: none; }
   .es-log summary::before { content: "▸ "; }
   .es-log[open] summary::before { content: "▾ "; }
   .es-log .es-body { padding: 4px 10px 8px; border-top: 1px solid var(--border); color: var(--fg-dim); }
   .es-log .es-row { padding: 2px 0; word-break: break-word; white-space: pre-wrap; }
-  .es-log .es-row .es-label { color: #2f9e6e; margin-right: 4px; }
+  .es-log .es-row .es-label { color: var(--green-fg); margin-right: 4px; }
   .es-log .es-en { margin-top: 4px; padding: 6px 8px; background: var(--bg3); border-radius: 4px;
                     color: var(--fg); white-space: pre-wrap; max-height: 240px; overflow-y: auto; }
   #sidebar.collapsed #enhanced-toggle {
@@ -86,7 +97,13 @@
   #sidebar .side-footer { padding: 10px; border-top: 1px solid var(--border); }
 
   /* 메인 */
-  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+  .scroll-down-btn { position: absolute; right: 24px; bottom: 112px; z-index: 5; display: none;
+              width: 36px; height: 36px; border-radius: 50%; background: var(--bg3); color: var(--fg-dim);
+              border: 1px solid var(--border); font-size: 18px; line-height: 1; cursor: pointer;
+              box-shadow: 0 2px 8px rgba(0,0,0,.25); transition: background .15s, color .15s, display .15s; }
+  .scroll-down-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .scroll-down-btn.show { display: block; }
   #topbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px;
             border-bottom: 1px solid var(--border); background: var(--bg2); flex-wrap: wrap; }
   #topbar select { background: var(--bg3); color: var(--fg); border: 1px solid var(--border);
@@ -99,8 +116,16 @@
                          border-radius: 50%; background: var(--fg-dim); transition: all .15s; }
   .toggle.on .pill { background: var(--accent); }
   .toggle.on .pill::after { left: 18px; background: #fff; }
+  #model-info { font-size: 12px; color: var(--fg-dim); overflow: hidden;
+                text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
+  #model-info b { color: var(--fg); font-weight: 600; }
   #preset-badge { font-size: 12px; background: var(--bg3); border: 1px solid var(--border);
                   color: var(--fg-dim); border-radius: 12px; padding: 4px 10px; }
+  /* 강화 검색 설정(상단바): 강화 검색 켜짐 시에만 표시 */
+  #es-settings { display: none; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-dim); }
+  #es-settings.show { display: flex; }
+  #search-lang-select { max-width: 160px; }
+  #translate-model-select { max-width: 260px; }
   .icon-btn { background: var(--bg3); color: var(--fg); border: 1px solid var(--border);
               border-radius: 6px; padding: 5px 9px; font-size: 14px; }
   .icon-btn:hover { background: var(--border); }
@@ -282,13 +307,19 @@
     <div id="topbar">
       <select id="model-select" data-i18n-title="model_select"></select>
       <button class="icon-btn" id="manage-models-btn" data-i18n-title="manage_models">⚙</button>
+      <span id="model-info" data-i18n-title="model_select"></span>
       <span id="preset-badge" style="display:none"></span>
+      <span id="es-settings">
+        <select id="search-lang-select" data-i18n-title="search_lang_tip"></select>
+        <select id="translate-model-select" data-i18n-title="translate_model_tip"></select>
+      </span>
       <select id="lang-select" style="margin-left:auto">
         <option value="ko">한국어</option>
         <option value="fr">Français</option>
       </select>
     </div>
     <div id="messages"><div id="empty-hint" data-i18n-html="empty_hint">왼쪽에서 대화를 선택하거나<br>새 대화를 시작하세요.</div></div>
+    <button class="scroll-down-btn" id="scroll-down-btn" data-i18n-title="scroll_down">↓</button>
     <div id="input-area">
       <div class="toggle on" id="web-toggle" data-i18n-title="web_search_tip">
         <div class="pill"></div><span data-i18n="web_search">웹 검색</span>
@@ -376,6 +407,9 @@ let currentConvId = null;
 let webSearchOn = true; // 기본 켜짐
 const ENHANCED_KEY = "enhancedOn";
 let enhancedOn = localStorage.getItem(ENHANCED_KEY) !== "0"; // 검색 기능이라 기본 ON
+let searchLang = "en";   // 강화 검색 수행 언어 (대화별 저장, PCT 국제 공개어)
+let translateModel = ""; // 강화 검색 번역 모델 ("" = .env 기본값, 대화별 저장)
+let defaultTranslateModel = ""; // .env TRANSLATE_MODEL 기본값 (/api/config)
 let sending = false;
 let editingPresetId = null; // null이면 새 프리셋
 let modelCaps = {};        // 모델 ID별 이미지 입출력 지원 여부
@@ -387,6 +421,8 @@ const convListEl = $("conv-list"), messagesEl = $("messages"), inputEl = $("inpu
 const sendBtn = $("send-btn"), modelSelect = $("model-select");
 const webToggle = $("web-toggle"), presetBadge = $("preset-badge");
 const enhancedToggle = $("enhanced-toggle");
+const esSettings = $("es-settings"), searchLangSelect = $("search-lang-select");
+const translateModelSelect = $("translate-model-select");
 
 // ---------- 다국어 (i18n) ----------
 let currentLang = localStorage.getItem("lang") || "ko";
@@ -403,6 +439,7 @@ const I18N = {
     empty_hint: "왼쪽에서 대화를 선택하거나<br>새 대화를 시작하세요.",
     web_search: "웹 검색",
     web_search_tip: "OpenRouter 웹 검색 플러그인 (유료 크레딧 차감)",
+    scroll_down: "맨 아래로",
     attach_image: "이미지 첨부",
     input_ph: "메시지를 입력하세요 (Enter: 전송, Shift+Enter: 줄바꿈)",
     send: "전송",
@@ -464,16 +501,19 @@ const I18N = {
     sidebar_collapse: "사이드바 접기",
     sidebar_expand: "사이드바 펼치기",
     enhanced_search: "강화 검색",
-    enhanced_search_tip: "검색 전 영어로 번역 → 웹 검색 → 결과를 원문 언어로 표시 (크레딧 추가 차감)",
+    enhanced_search_tip: "질문을 검색 언어로 번역 → 웹 검색 → 결과를 원문 언어로 표시 (크레딧 추가 차감)",
+    search_lang_tip: "강화 검색 수행 언어 (PCT 국제 공개어)",
+    translate_model_tip: "번역(감지/번역/역번역)에 사용할 모델 선택",
+    tm_default_short: "기본값",
     es_detecting: "언어 감지 중…",
-    es_translating: "영어로 번역 중…",
+    es_translating: "{lang}로 번역 중…",
     es_searching: "웹 검색 중…",
     es_answering: "답변 생성 중…",
     es_translating_back: "결과를 원문 언어로 번역 중…",
     es_log_title: "강화 검색 진행 과정",
     es_log_lang: "언어 감지",
-    es_log_query: "영어 질문",
-    es_log_en_answer: "영어 답변 (원문)",
+    es_log_query: "검색 질문 ({lang})",
+    es_log_en_answer: "검색 답변 ({lang}, 원문)",
     es_log_skipped: "입력이 영어 — 번역 생략",
   },
   fr: {
@@ -487,6 +527,7 @@ const I18N = {
     empty_hint: "Sélectionnez une conversation à gauche ou<br>démarrez-en une nouvelle.",
     web_search: "Recherche web",
     web_search_tip: "Plugin de recherche web OpenRouter (crédits payants)",
+    scroll_down: "Revenir en bas",
     attach_image: "Joindre une image",
     input_ph: "Saisissez votre message (Entrée : envoyer, Maj+Entrée : nouvelle ligne)",
     send: "Envoyer",
@@ -548,16 +589,19 @@ const I18N = {
     sidebar_collapse: "Réduire la barre latérale",
     sidebar_expand: "Afficher la barre latérale",
     enhanced_search: "Recherche approfondie",
-    enhanced_search_tip: "Traduit en anglais, recherche web, puis réaffiche dans la langue d'origine (crédits supplémentaires)",
+    enhanced_search_tip: "Traduit dans la langue de recherche, recherche web, puis réaffiche dans la langue d'origine (crédits supplémentaires)",
+    search_lang_tip: "Langue de recherche approfondie (langues de publication du PCT)",
+    translate_model_tip: "Modèle de traduction (détection/traduction/rétro-traduction)",
+    tm_default_short: "Défaut",
     es_detecting: "Détection de la langue…",
-    es_translating: "Traduction en anglais…",
+    es_translating: "Traduction en {lang}…",
     es_searching: "Recherche web…",
     es_answering: "Génération de la réponse…",
     es_translating_back: "Traduction dans la langue d'origine…",
     es_log_title: "Processus de recherche approfondie",
     es_log_lang: "Langue détectée",
-    es_log_query: "Question en anglais",
-    es_log_en_answer: "Réponse en anglais (originale)",
+    es_log_query: "Question ({lang})",
+    es_log_en_answer: "Réponse ({lang}, originale)",
     es_log_skipped: "Saisie en anglais — traduction ignorée",
   },
 };
@@ -590,6 +634,9 @@ function applyLang() {
   }
   if (typeof updateWebToggleVisibility === "function") {
     updateWebToggleVisibility();
+  }
+  if (typeof renderTranslateModelSelect === "function") {
+    renderTranslateModelSelect();
   }
 }
 
@@ -844,8 +891,14 @@ function renderMessages() {
   if (conv.model) {
     renderModelSelect(conv.model);
   }
+  // 대화별 강화 검색 설정(검색 언어/번역 모델) 동기화
+  searchLang = conv.search_lang || "en";
+  translateModel = conv.translate_model || "";
+  searchLangSelect.value = searchLang;
+  renderTranslateModelSelect();
   updateAttachVisibility();
   scrollToBottom();
+  updateScrollDownBtn();
 }
 
 function isTextContent(c) { return typeof c === "string"; }
@@ -939,9 +992,27 @@ function copyText(text, btn) {
   }
 }
 
-function scrollToBottom() {
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+const SCROLL_STICK_PX = 80;
+function isNearBottom() {
+  return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <= SCROLL_STICK_PX;
 }
+function scrollToBottom() {
+  // 스트리밍 중 사용자가 위로 올린 경우 따라가지 않음 → 이전 내용 읽기 보존
+  if (!isNearBottom()) return;
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  const btn = $("scroll-down-btn");
+  if (btn) btn.classList.remove("show");
+}
+function updateScrollDownBtn() {
+  const btn = $("scroll-down-btn");
+  if (!btn) return;
+  btn.classList.toggle("show", !isNearBottom());
+}
+messagesEl.addEventListener("scroll", updateScrollDownBtn, { passive: true });
+$("scroll-down-btn").onclick = () => {
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  updateScrollDownBtn();
+};
 
 // ---------- 대화 동작 ----------
 async function loadConversations() {
@@ -960,7 +1031,12 @@ async function createConversation() {
   const preset = presets.find((p) => p.id === presetId);
   const conv = await api("/api/conversations", {
     method: "POST",
-    body: JSON.stringify({ preset_id: presetId, model: (preset && preset.model) || modelSelect.value }),
+    body: JSON.stringify({
+      preset_id: presetId,
+      model: (preset && preset.model) || modelSelect.value,
+      search_lang: searchLang,
+      translate_model: translateModel || null,
+    }),
   });
   conversations.unshift(conv);
   currentConvId = conv.id;
@@ -1124,7 +1200,7 @@ async function sendMessage(regenerate = false) {
     if (enEl) return enEl;
     const row = document.createElement("div");
     row.className = "es-row";
-    row.innerHTML = `<span class="es-label">${t("es_log_en_answer")}</span>`;
+    row.innerHTML = `<span class="es-label">${escapeHtml(t("es_log_en_answer", { lang: pctLangName(searchLang) }))}</span>`;
     enEl = document.createElement("div");
     enEl.className = "es-en";
     enEl.textContent = "";
@@ -1183,7 +1259,8 @@ async function sendMessage(regenerate = false) {
           scrollToBottom();
         } else if (event === "status") {
           const stageMap = {
-            detecting: t("es_detecting"), translating: t("es_translating"),
+            detecting: t("es_detecting"),
+            translating: t("es_translating", { lang: pctLangName(searchLang) }),
             searching: t("es_searching"), answering: t("es_answering"),
             translating_back: t("es_translating_back"),
           };
@@ -1193,11 +1270,11 @@ async function sendMessage(regenerate = false) {
             scrollToBottom();
           }
         } else if (event === "lang") {
-          logRow(t("es_log_lang"), payload);
+          logRow(t("es_log_lang"), pctLangName(payload) || payload);
           scrollToBottom();
         } else if (event === "query") {
-          // 입력과 동일(영어)이 아니면 서버가 내려보내므로, 항상 표시
-          logRow(t("es_log_query") + " →", payload);
+          // 입력이 검색 언어가 아니면 서버가 번역 질문을 내려보내므로, 항상 표시
+          logRow(t("es_log_query", { lang: pctLangName(searchLang) }) + " →", payload);
           scrollToBottom();
         } else if (event === "en_token") {
           // 영어 원문 답변 실시간 표시
@@ -1322,10 +1399,86 @@ function renderModelSelect(defaultModel) {
   if (prev && !favoriteModels.includes(prev)) favoriteModels.unshift(prev);
   modelSelect.innerHTML = favoriteModels.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join("");
   modelSelect.value = prev && favoriteModels.includes(prev) ? prev : favoriteModels[0];
+  updateModelInfo();
+  // 번역 모델 셀렉터도 같은 즐겨찾기 목록으로 갱신
+  renderTranslateModelSelect();
 }
 
 async function loadModels() {
   favoriteModels = await api("/api/models");
+}
+
+// ---------- 강화 검색: 검색 언어 / 번역 모델 ----------
+// PCT(특허협력조약) 국제 공개어 10종 — 옵션 표기는 원어 고정
+const PCT_LANGUAGES = [
+  { code: "en", native: "English" },
+  { code: "ko", native: "한국어" },
+  { code: "ja", native: "日本語" },
+  { code: "zh", native: "中文" },
+  { code: "de", native: "Deutsch" },
+  { code: "fr", native: "Français" },
+  { code: "es", native: "Español" },
+  { code: "pt", native: "Português" },
+  { code: "ru", native: "Русский" },
+  { code: "ar", native: "العربية" },
+];
+const PCT_LANG_NAMES = {
+  en: "English", ar: "Arabic", zh: "Chinese", fr: "French", de: "German",
+  ja: "Japanese", ko: "Korean", pt: "Portuguese", ru: "Russian", es: "Spanish",
+};
+const PCT_LANG_I18N = {
+  ko: { ar: "아랍어", zh: "중국어", en: "영어", fr: "프랑스어", de: "독일어",
+        ja: "일본어", ko: "한국어", pt: "포르투갈어", ru: "러시아어", es: "스페인어" },
+  fr: { ar: "arabe", zh: "chinois", en: "anglais", fr: "français", de: "allemand",
+        ja: "japonais", ko: "coréen", pt: "portugais", ru: "russe", es: "espagnol" },
+};
+function pctLangName(code) {
+  return (PCT_LANG_I18N[currentLang] && PCT_LANG_I18N[currentLang][code])
+    || PCT_LANG_NAMES[code] || code || "";
+}
+
+function renderSearchLangSelect() {
+  searchLangSelect.innerHTML = PCT_LANGUAGES.map((l) =>
+    `<option value="${l.code}" title="${escapeHtml(pctLangName(l.code))}">${escapeHtml(l.native)}</option>`).join("");
+  searchLangSelect.value = searchLang;
+}
+
+function renderTranslateModelSelect() {
+  // 일반 모델 셀렉터와 같은 즐겨찾기 목록 공유. 첫 옵션 "" = .env TRANSLATE_MODEL 기본값
+  const defText = defaultTranslateModel
+    ? `${t("tm_default_short")} (${defaultTranslateModel})`
+    : t("tm_default_short");
+  translateModelSelect.innerHTML = `<option value="">${escapeHtml(defText)}</option>`
+    + favoriteModels.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join("");
+  // 현재 값이 즐겨찾기에 없어도 표시되도록 임시 옵션 추가
+  if (translateModel && !favoriteModels.includes(translateModel)) {
+    translateModelSelect.insertAdjacentHTML("beforeend",
+      `<option value="${escapeHtml(translateModel)}">${escapeHtml(translateModel)}</option>`);
+  }
+  translateModelSelect.value = translateModel;
+}
+
+async function setSearchLang(lang) {
+  searchLang = lang;
+  if (!currentConvId) return; // 대화 선택 전에는 상태만 유지 (새 대화 생성 시 전달)
+  const updated = await api(`/api/conversations/${currentConvId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ search_lang: lang }),
+  }).catch(() => null);
+  const conv = currentConv();
+  if (conv && updated) conv.search_lang = updated.search_lang;
+}
+
+async function setTranslateModel(modelId) {
+  translateModel = modelId || "";
+  renderTranslateModelSelect();
+  if (!currentConvId) return;
+  const updated = await api(`/api/conversations/${currentConvId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ translate_model: translateModel || null }),
+  }).catch(() => null);
+  const conv = currentConv();
+  if (conv && updated) conv.translate_model = updated.translate_model;
 }
 
 let searchTimer = null;
@@ -1333,7 +1486,51 @@ let searchSeq = 0;
 
 function fmtPrice(p) {
   if (!p || Number(p) === 0) return "FREE";
-  return "$" + Number(p).toExponential(2);
+  // 토큰당 달러 -> 100만 토큰당 달러로 변환해 표시 (예: $0.15/M)
+  const perM = Number(p) * 1_000_000;
+  const s = perM >= 10 ? perM.toFixed(1) : perM >= 0.1 ? perM.toFixed(2) : perM.toFixed(3);
+  return "$" + s + "/M";
+}
+
+function fmtCtx(n) {
+  if (!n) return "?";
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1) + "M";
+  if (n >= 1000) return Math.round(n / 1000) + "K";
+  return n.toLocaleString();
+}
+
+// ---------- 선택된 모델 정보 표시 (상단바) ----------
+let modelInfoMap = null;   // id -> {name, context_length, prompt_price, completion_price}
+let modelInfoPromise = null;
+
+async function loadModelInfoMap() {
+  if (modelInfoMap) return modelInfoMap;
+  if (!modelInfoPromise) {
+    modelInfoPromise = api("/api/openrouter/models").then((models) => {
+      modelInfoMap = {};
+      for (const m of models) modelInfoMap[m.id] = m;
+      return modelInfoMap;
+    }).catch(() => {
+      modelInfoPromise = null; // 실패 시 다음 호출에서 재시도
+      return null;
+    });
+  }
+  return modelInfoPromise;
+}
+
+async function updateModelInfo() {
+  const el = $("model-info");
+  const id = modelSelect.value;
+  if (!id) { el.textContent = ""; return; }
+  const info = (await loadModelInfoMap())?.[id];
+  if (modelSelect.value !== id) return; // 표시하는 동안 모델이 바뀜
+  if (!info) {
+    el.textContent = "";
+    return;
+  }
+  el.innerHTML = `${t("ctx", { n: fmtCtx(info.context_length) })}`
+    + ` · in ${fmtPrice(info.prompt_price)}`
+    + ` / out ${fmtPrice(info.completion_price)}`;
 }
 
 function renderSearchResults(models) {
@@ -1449,6 +1646,7 @@ enhancedToggle.onclick = () => {
   enhancedToggle.classList.toggle("on", enhancedOn);
   updateWebToggleVisibility();
 };
+modelSelect.addEventListener("change", updateModelInfo);
 modelSelect.onchange = async () => {
   updateAttachVisibility();
   if (currentConvId) {
@@ -1542,6 +1740,10 @@ $("mm-search").addEventListener("input", (e) => {
   searchTimer = setTimeout(() => searchModels(q), 300);
 });
 
+// ---------- 강화 검색 설정 바인딩 ----------
+searchLangSelect.onchange = () => setSearchLang(searchLangSelect.value);
+translateModelSelect.onchange = () => setTranslateModel(translateModelSelect.value);
+
 // ---------- 모델 능력 / 이미지 첨부 ----------
 async function loadModelCaps() {
   try {
@@ -1558,9 +1760,10 @@ function updateAttachVisibility() {
   if (!(caps && caps.input_image)) clearPendingImages();
 }
 
-// 강화 검색이 켜져 있으면 웹 검색 토글을 숨김 (무조건 검색 수행), 꺼져 있으면 표시
+// 강화 검색이 켜져 있으면 웹 검색 토글을 숨기고(무조건 검색 수행) 검색 언어/번역 모델 UI를 표시
 function updateWebToggleVisibility() {
   webToggle.style.display = enhancedOn ? "none" : "";
+  esSettings.classList.toggle("show", enhancedOn);
 }
 
 function fileToDataUri(file) {
@@ -1627,9 +1830,11 @@ inputEl.addEventListener("paste", async (e) => {
 (async function init() {
   applyLang();
   enhancedToggle.classList.toggle("on", enhancedOn);
+  renderSearchLangSelect();
   updateWebToggleVisibility();
   try {
     const cfg = await api("/api/config");
+    defaultTranslateModel = cfg.translate_model || "";
     await loadModels();
     renderModelSelect(cfg.default_model || favoriteModels[0]);
     await loadModelCaps();
