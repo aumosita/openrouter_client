@@ -222,6 +222,7 @@ async def list_models(query: str | None = None) -> list[dict]:
             "completion_price": (m.get("pricing") or {}).get("completion"),
             "input_modalities": (m.get("architecture") or {}).get("input_modalities") or ["text"],
             "output_modalities": (m.get("architecture") or {}).get("output_modalities") or ["text"],
+            "has_native_search": "web_search_options" in (m.get("supported_parameters") or []),
         }
         for m in data
         if m.get("id")

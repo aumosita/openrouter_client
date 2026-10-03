@@ -186,6 +186,10 @@
   .var-btn:disabled { color: var(--border); cursor: default; }
   /* 이미지 입출력 */
   .msg-image { position: relative; display: inline-block; margin: 6px 0; }
+  .sources-box { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--border);
+                 border-radius: 6px; font-size: 13px; }
+  .sources-box .sources-title { font-weight: 600; color: var(--fg-dim); margin-bottom: 4px; }
+  .sources-box .sources-link a { color: inherit; text-decoration: underline; word-break: break-all; }
   .msg-image img { max-width: min(320px, 100%); border-radius: 8px; display: block;
                    border: 1px solid var(--border); cursor: zoom-in; }
   .msg-image:hover .dl-img { opacity: 1; }
@@ -369,7 +373,10 @@
     <div class="modal">
       <h2 data-i18n="models_title">모델 관리</h2>
       <div class="row"><label data-i18n="models_search">OpenRouter 모델 검색</label>
-        <input type="text" id="mm-search" data-i18n-ph="models_search_ph" placeholder="예: claude, gpt, free ..."></div>
+        <input type="text" id="mm-search" data-i18n-ph="models_search_ph" placeholder="예: claude, gpt, free ...">
+        <label style="display:flex;align-items:center;gap:5px;font-size:13px;margin-top:4px;cursor:pointer">
+          <input type="checkbox" id="mm-native-search"> <span data-i18n="native_search_only">네이티브 웹 검색 지원 모델만</span>
+        </label></div>
       <div id="model-search-results"></div>
       <div class="row"><label data-i18n="favorites">즐겨찾기</label></div>
       <div id="favorite-model-list"></div>
@@ -455,6 +462,8 @@ const I18N = {
     models_title: "모델 관리",
     models_search: "OpenRouter 모델 검색",
     models_search_ph: "예: claude, gpt, free ...",
+    native_search_only: "네이티브 웹 검색 지원 모델만",
+    native_search_tip: "네이티브 웹 검색 지원",
     favorites: "즐겨찾기",
     pe_edit: "프리셋 편집",
     pe_new: "새 프리셋",
@@ -515,6 +524,7 @@ const I18N = {
     es_log_query: "검색 질문 ({lang})",
     es_log_en_answer: "검색 답변 ({lang}, 원문)",
     es_log_skipped: "입력이 영어 — 번역 생략",
+    sources_title: "출처",
   },
   fr: {
     app_title: "Local Chat",
@@ -543,6 +553,8 @@ const I18N = {
     models_title: "Gérer les modèles",
     models_search: "Rechercher un modèle OpenRouter",
     models_search_ph: "ex. : claude, gpt, free ...",
+    native_search_only: "Modèles avec recherche web native uniquement",
+    native_search_tip: "Recherche web native prise en charge",
     favorites: "Favoris",
     pe_edit: "Modifier le préréglage",
     pe_new: "Nouveau préréglage",
@@ -603,6 +615,7 @@ const I18N = {
     es_log_query: "Question ({lang})",
     es_log_en_answer: "Réponse ({lang}, originale)",
     es_log_skipped: "Saisie en anglais — traduction ignorée",
+    sources_title: "Sources",
   },
 };
 
@@ -903,6 +916,22 @@ function renderMessages() {
 
 function isTextContent(c) { return typeof c === "string"; }
 
+// OpenRouter url_citation annotations → 출처 링크 목록 HTML (URL 중복 제거)
+function annotationsHtml(anns) {
+  const seen = new Set();
+  const links = [];
+  for (const a of anns || []) {
+    const c = (a && typeof a === "object") ? (a.url_citation || a) : {};
+    const url = c.url || a?.url;
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    const title = c.title || c.cited_text || url;
+    links.push(`<div class="sources-link"><a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(title)}</a></div>`);
+  }
+  if (!links.length) return "";
+  return `<div class="sources-box"><div class="sources-title">${t("sources_title")}</div>${links.join("")}</div>`;
+}
+
 function contentText(c) {
   // 복사/제목용: 배열 content에서 텍스트만 추출
   if (isTextContent(c)) return c;
@@ -928,6 +957,8 @@ function appendMessageEl(m, isLastAssistant = false) {
     bodyHtml = m.role === "assistant" ? renderMarkdown(m.content) : escapeHtml(normalizeModelEntities(m.content));
   }
   let html = bodyHtml;
+  // 출처(웹 검색 url_citation annotations) 링크 목록
+  if (m.role === "assistant") html += annotationsHtml(m.annotations);
   // 사고 과정(추론) 접이식 블록
   if (m.role === "assistant" && m.reasoning) {
     html = '<details class="think-block"><summary>' + t("think_done") + '</summary><div class="think-body">' + escapeHtml(m.reasoning) + '</div></details>' + html;
@@ -1165,6 +1196,14 @@ async function sendMessage(regenerate = false) {
   let logEl = null;      // 강화 검색 진행 로그(<details>)
   let logBody = null;    // 로그 본문 그릇
   let enEl = null;       // 영어 원문 답변 영역
+  let anns = null;       // 웹 검색 출처(url_citation annotations)
+  // token 이벤트마다 innerHTML이 재구성되므로 출처 블록은 매번 다시 붙임
+  const renderSources = () => {
+    if (!anns) return;
+    assistantEl.querySelectorAll(".sources-box").forEach((e) => e.remove());
+    const html = annotationsHtml(anns);
+    if (html) assistantEl.insertAdjacentHTML("beforeend", html);
+  };
   const finalizeThink = () => {
     if (thinkEl) {
       thinkEl.classList.remove("streaming");
@@ -1256,6 +1295,7 @@ async function sendMessage(regenerate = false) {
           const next = renderMarkdown(fullText);
           assistantEl.innerHTML = next;
           for (const el of preserved) assistantEl.prepend(el);
+          renderSources();
           scrollToBottom();
         } else if (event === "status") {
           const stageMap = {
@@ -1299,6 +1339,10 @@ async function sendMessage(regenerate = false) {
           assistantEl.insertAdjacentHTML("beforeend",
             `<div class="msg-image"><img src="${escapeHtml(payload)}" alt="${t("img_alt")}">`
             + `<a class="dl-img" href="${escapeHtml(payload)}" download>${t("save_img")}</a></div>`);
+          scrollToBottom();
+        } else if (event === "annotations") {
+          anns = payload;
+          renderSources();
           scrollToBottom();
         } else if (event === "error") {
           throw new Error(payload);
@@ -1530,7 +1574,8 @@ async function updateModelInfo() {
   }
   el.innerHTML = `${t("ctx", { n: fmtCtx(info.context_length) })}`
     + ` · in ${fmtPrice(info.prompt_price)}`
-    + ` / out ${fmtPrice(info.completion_price)}`;
+    + ` / out ${fmtPrice(info.completion_price)}`
+    + (info.has_native_search ? ` <span class="model-badge" title="${t("native_search_tip")}">🔎</span>` : "");
 }
 
 function renderSearchResults(models) {
@@ -1540,7 +1585,7 @@ function renderSearchResults(models) {
     const item = document.createElement("div");
     item.className = "model-item";
     item.innerHTML = `<div class="info">
-        <div class="name">${escapeHtml(m.name)} <span style="color:var(--fg-dim);font-weight:400">${escapeHtml(m.id)}</span>${m.id.endsWith(":free") ? '<span class="model-badge">FREE</span>' : ""}${(m.output_modalities || []).includes("image") ? '<span class="model-badge" title="이미지 출력 가능">🖼</span>' : ""}</div>
+        <div class="name">${escapeHtml(m.name)} <span style="color:var(--fg-dim);font-weight:400">${escapeHtml(m.id)}</span>${m.id.endsWith(":free") ? '<span class="model-badge">FREE</span>' : ""}${(m.output_modalities || []).includes("image") ? '<span class="model-badge" title="이미지 출력 가능">🖼</span>' : ""}${m.has_native_search ? `<span class="model-badge" title="${t("native_search_tip")}">🔎</span>` : ""}</div>
         <div class="desc">${t("ctx", { n: m.context_length ? m.context_length.toLocaleString() : "?" })} · in ${fmtPrice(m.prompt_price)} / out ${fmtPrice(m.completion_price)}</div>
       </div>`;
     const addBtn = document.createElement("button");
@@ -1568,7 +1613,8 @@ async function searchModels(query) {
   const seq = ++searchSeq;
   const list = $("model-search-results");
   try {
-    const models = await api(`/api/openrouter/models?query=${encodeURIComponent(query)}`);
+    const nativeOnly = $("mm-native-search").checked ? "&native_search=true" : "";
+    const models = await api(`/api/openrouter/models?query=${encodeURIComponent(query)}${nativeOnly}`);
     if (seq !== searchSeq) return; // 이전 요청 무시
     renderSearchResults(models);
   } catch (e) {
@@ -1584,7 +1630,8 @@ function renderFavoriteModels() {
     item.className = "model-item";
     const info = document.createElement("div");
     info.className = "info";
-    info.innerHTML = `<div class="name">${escapeHtml(id)}</div>`;
+    const mi = modelInfoMap?.[id];
+    info.innerHTML = `<div class="name">${escapeHtml(id)}${mi?.has_native_search ? `<span class="model-badge" title="${t("native_search_tip")}">🔎</span>` : ""}</div>`;
     const delBtn = document.createElement("button");
     delBtn.className = "del";
     delBtn.textContent = t("del");
@@ -1731,6 +1778,7 @@ $("manage-models-btn").onclick = async () => {
   renderFavoriteModels();
   $("model-search-results").innerHTML = "";
   $("mm-search").value = "";
+  $("mm-native-search").checked = false;
   $("model-modal").classList.add("open");
 };
 $("model-close-btn").onclick = () => $("model-modal").classList.remove("open");
@@ -1739,6 +1787,7 @@ $("mm-search").addEventListener("input", (e) => {
   const q = e.target.value.trim();
   searchTimer = setTimeout(() => searchModels(q), 300);
 });
+$("mm-native-search").onchange = () => searchModels($("mm-search").value.trim());
 
 // ---------- 강화 검색 설정 바인딩 ----------
 searchLangSelect.onchange = () => setSearchLang(searchLangSelect.value);

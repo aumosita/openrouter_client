@@ -243,7 +243,7 @@ MODELS_CACHE_TTL = 1800.0  # 30분
 
 
 @app.get("/api/openrouter/models")
-async def search_openrouter_models(query: str | None = None):
+async def search_openrouter_models(query: str | None = None, native_search: bool = False):
     now = time.monotonic()
     if (
         _models_cache["data"] is None
@@ -257,6 +257,8 @@ async def search_openrouter_models(query: str | None = None):
                 raise HTTPException(502, "모델 목록을 가져올 수 없습니다.")
             # 실패 시 캐시된 (stale) 데이터 사용
     models = _models_cache["data"]
+    if native_search:
+        models = [m for m in models if m.get("has_native_search")]
     if query:
         q = query.lower()
         models = [
@@ -470,6 +472,7 @@ async def chat(body: ChatRequest):
                             yield sse("image", url)
                     elif kind == "annotations":
                         annotations = data
+                        yield sse("annotations", data)
                     elif kind == "usage":
                         last_usage = data
                     elif kind == "error":
